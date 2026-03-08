@@ -51,7 +51,7 @@ impl Evaluator {
 
     pub fn obj_to_func(&mut self, object: Object) -> Object {
         match object {
-            Object::Function(_, _, _) | Object::AsyncFunction(_, _, _) | Object::Builtin(_, _, _, _) | Object::BuiltinStd(_, _, _, _) => object,
+            Object::Function(..) | Object::AsyncFunction(..) | Object::Builtin(..) | Object::BuiltinStd(..) | Object::WasmImportedFunction{..} => object,
             Object::Error(e) => Object::Error(e),
             o => Object::Error(RuntimeError::NotCallable(o.type_name())),
         }

@@ -4,11 +4,13 @@ use crate::{
     ast::ast::{Expr, Ident, Program},
     errors::RuntimeError,
     interpreter::{
-        env::Environment, obj::{Object, BuiltinFunction, StdFunction}
+        env::Environment, obj::{BuiltinFunction, Object, StdFunction}
     },
+    wasm::{WasmInstance, giulio_to_wasm_val, wasm_val_to_giulio},
 };
 use futures::stream::{FuturesUnordered, StreamExt};
 use super::super::eval::{Evaluator, EvalFuture};
+use wasmtime::Val;
 
 impl Evaluator {
     pub fn eval_fn(&mut self, params: Vec<Ident>, body: Program) -> Object {
@@ -52,6 +54,10 @@ impl Evaluator {
                     future_obj
                 }
             }
+            Object::WasmImportedFunction { module_name, func_name, instance } => {
+                self.eval_wasm_fn_call(args_expr, module_name, func_name, instance).await
+            }
+
             Object::Builtin(_, min_params, max_params, b_fn) => {
                 self.eval_builtin_call(args_expr, min_params, max_params, b_fn).await
             }
@@ -233,5 +239,65 @@ impl Evaluator {
             
             self_clone.eval_blockstmt(body).await
         })
+    }
+
+    pub async fn eval_wasm_fn_call(
+        &mut self,
+        args_expr: Vec<Expr>,
+        _module_name: String,
+        func_name: String,
+        instance: Arc<Mutex<Option<WasmInstance>>>,
+    ) -> Object {
+        let mut self_clone = self.clone();
+        
+        let mut args = Vec::new();
+        for e in args_expr {
+            args.push(self_clone.eval_expr(e).await);
+        }
+        
+        let result = {
+            let mut registry = self_clone.module_registry.lock().unwrap();
+            let store = match &mut registry.wasm_store {
+                Some(store) => store,
+                None => return Object::Error(RuntimeError::InvalidOperation(
+                    "WASM store not available".to_string()
+                )),
+            };
+            
+            let inst = instance.lock().unwrap();
+            let inst = match inst.as_ref() {
+                Some(i) => i,
+                None => return Object::Error(RuntimeError::InvalidOperation(
+                    "WASM instance not available".to_string()
+                )),
+            };
+            
+            let memory = inst.get_memory();
+            
+            let wasm_args: Result<Vec<Val>, RuntimeError> = args
+                .iter()
+                .map(|arg| giulio_to_wasm_val(arg, memory, store))
+                .collect();
+            
+            let wasm_args = match wasm_args {
+                Ok(a) => a,
+                Err(e) => return Object::Error(e),
+            };
+            
+            inst.call_func_with_args(store, &func_name, &wasm_args)
+                .map_err(RuntimeError::from)
+                .and_then(|results| {
+                    if results.is_empty() {
+                        Ok(Object::Null)
+                    } else {
+                        wasm_val_to_giulio(&results[0])
+                    }
+                })
+        };
+        
+        match result {
+            Ok(obj) => obj,
+            Err(e) => Object::Error(e),
+        }
     }
 }

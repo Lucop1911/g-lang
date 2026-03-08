@@ -7,17 +7,24 @@ use crate::std::json::*;
 use crate::std::http::*;
 use crate::std::env::*;
 use std::collections::HashMap;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 use std::sync::{Arc, Mutex};
 use crate::ast::ast::{Program, Ident};
 use crate::interpreter::obj::Object;
 use crate::errors::RuntimeError;
 
+#[cfg(feature = "wasm")]
+use crate::wasm::{WasmRuntime, WasmStore};
+
 pub struct ModuleRegistry {
-    loaded_modules: HashMap<String, Module>,
+    pub(crate) loaded_modules: HashMap<String, Module>,
     stdlib: HashMap<String, Module>,
-    base_path: PathBuf,
+    pub(crate) base_path: PathBuf,
+    #[cfg(feature = "wasm")]
+    pub(crate) wasm_runtime: Option<WasmRuntime>,
+    #[cfg(feature = "wasm")]
+    pub(crate) wasm_store: Option<WasmStore>,
 }
 
 #[derive(Clone, Debug)]
@@ -28,10 +35,26 @@ pub struct Module {
 
 impl ModuleRegistry {
     pub fn new(base_path: PathBuf) -> Self {
+        #[cfg(feature = "wasm")]
+        let (wasm_runtime, wasm_store) = match WasmRuntime::new() {
+            Ok(runtime) => {
+                let store = runtime.create_store();
+                (Some(runtime), Some(store))
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to initialize WASM runtime: {}", e);
+                (None, None)
+            }
+        };
+        
         let mut registry = ModuleRegistry {
             loaded_modules: HashMap::new(),
             stdlib: HashMap::new(),
             base_path,
+            #[cfg(feature = "wasm")]
+            wasm_runtime,
+            #[cfg(feature = "wasm")]
+            wasm_store,
         };
         
         registry.load_stdlib();
@@ -178,6 +201,10 @@ impl ModuleRegistry {
     }
     
     async fn load_user_module(module_registry_arc: Arc<Mutex<Self>>, path: &[String]) -> Result<Module, RuntimeError> {
+        if path.first().map(|s| s.as_str()) == Some("wasm") {
+            return ModuleRegistry::load_wasm_module(module_registry_arc, &path[1..]).await;
+        }
+
         let base_path = { module_registry_arc.lock().unwrap().base_path.clone() };
         let mut file_path = base_path;
         

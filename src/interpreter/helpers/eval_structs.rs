@@ -184,8 +184,8 @@ impl Evaluator {
             if let Object::Module { ref exports, .. } = object {
                 if let Some(func_obj) = exports.get(&method_name) {
                     let mut args = Vec::new();
-                    for e in args_expr {
-                        args.push(self_clone.eval_expr(e).await);
+                    for e in &args_expr {
+                        args.push(self_clone.eval_expr(e.clone()).await);
                     }
                     return match func_obj.clone() {
                         Object::Function(params, body, _) => {
@@ -223,6 +223,10 @@ impl Evaluator {
                                 Ok(obj) => obj,
                                 Err(e) => Object::Error(RuntimeError::InvalidOperation(e)),
                             }
+                        }
+                        #[cfg(feature = "wasm")]
+                        Object::WasmImportedFunction { module_name, func_name, instance } => {
+                            self_clone.eval_wasm_fn_call(args_expr.clone(), module_name, func_name, instance).await
                         }
                         _ => Object::Error(RuntimeError::NotCallable(method_name)),
                     };

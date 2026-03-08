@@ -1,13 +1,15 @@
+use num_bigint::BigInt;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use num_bigint::BigInt;
-
 use crate::ast::ast::{Ident, Program};
 use crate::errors::RuntimeError;
 use crate::interpreter::env::Environment;
+
+#[cfg(feature = "wasm")]
+use crate::wasm::WasmInstance;
 
 #[derive(Clone)]
 pub enum Object {
@@ -23,6 +25,11 @@ pub enum Object {
     Builtin(String, usize, usize, BuiltinFunction),
     BuiltinStd(String, usize, usize, StdFunction),
     BuiltinStdAsync(String, usize, usize, AsyncStdFunction),
+    WasmImportedFunction {
+        module_name: String,
+        func_name: String,
+        instance: Arc<Mutex<Option<WasmInstance>>>,
+    },
     Struct {
         name: String,
         fields: HashMap<String, Object>,
@@ -39,21 +46,13 @@ pub enum Object {
     Break,
     Continue,
     ThrownValue(Box<Object>),
-    Future(
-        Arc<
-            Mutex<
-                Option<
-                    std::pin::Pin<
-                        Box<
-                            dyn std::future::Future<Output = Result<Object, RuntimeError>>
-                                + Send
-                                + 'static,
-                        >,
-                    >,
-                >,
-            >,
-        >,
-    ),
+    Future(Arc<Mutex<Option<std::pin::Pin<Box<dyn std::future::Future<Output = Result<Object, RuntimeError>> + Send + 'static>>>>>),
+    #[cfg(feature = "wasm")]
+    WasmModule {
+        name: String,
+        exports: HashMap<String, Object>,
+        instance: Arc<Mutex<Option<WasmInstance>>>,
+    },
 }
 
 pub type BuiltinFunction = fn(Vec<Object>) -> Result<Object, String>;
@@ -73,6 +72,13 @@ impl fmt::Debug for Object {
             Object::Function(p, b, _) => write!(f, "Function(params:{:?}, body:{:?})", p, b),
             Object::AsyncFunction(p, b, _) => {
                 write!(f, "AsyncFunction(params:{:?}, body:{:?})", p, b)
+            }
+            Object::WasmImportedFunction {
+                module_name,
+                func_name,
+                ..
+            } => {
+                write!(f, "WasmImportedFunction({}::{})", module_name, func_name)
             }
             Object::Builtin(n, _, _, _) => write!(f, "Builtin(\"{}\")", n),
             Object::BuiltinStd(n, _, _, _) => write!(f, "BuiltinStd(\"{}\")", n),
@@ -100,6 +106,13 @@ impl fmt::Debug for Object {
             Object::Continue => write!(f, "Continue"),
             Object::ThrownValue(o) => write!(f, "ThrownValue({:?})", o),
             Object::Future(_) => write!(f, "Future(_)"),
+            #[cfg(feature = "wasm")]
+            Object::WasmModule { name, exports, .. } => write!(
+                f,
+                "WasmModule(name:{}, exports:{:?})",
+                name,
+                exports.keys().collect::<Vec<_>>()
+            ),
         }
     }
 }
@@ -137,6 +150,18 @@ impl PartialEq for Object {
                 Object::AsyncFunction(params_a, body_a, _),
                 Object::AsyncFunction(params_b, body_b, _),
             ) => params_a == params_b && body_a == body_b,
+            (
+                Object::WasmImportedFunction {
+                    module_name: a,
+                    func_name: b,
+                    ..
+                },
+                Object::WasmImportedFunction {
+                    module_name: c,
+                    func_name: d,
+                    ..
+                },
+            ) => a == c && b == d,
             (Object::Break, Object::Break) => true,
             (Object::Continue, Object::Continue) => true,
             (Object::Future(_), Object::Future(_)) => false,
@@ -148,6 +173,19 @@ impl PartialEq for Object {
                 Object::Module {
                     name: b,
                     exports: e_b,
+                },
+            ) => a == b && e_a.keys().collect::<Vec<_>>() == e_b.keys().collect::<Vec<_>>(),
+            #[cfg(feature = "wasm")]
+            (
+                Object::WasmModule {
+                    name: a,
+                    exports: e_a,
+                    ..
+                },
+                Object::WasmModule {
+                    name: b,
+                    exports: e_b,
+                    ..
                 },
             ) => a == b && e_a.keys().collect::<Vec<_>>() == e_b.keys().collect::<Vec<_>>(),
             _ => false,
@@ -178,6 +216,7 @@ impl Object {
             Object::Hash(_) => "hash".to_string(),
             Object::Function(_, _, _) => "function".to_string(),
             Object::AsyncFunction(_, _, _) => "async function".to_string(),
+            Object::WasmImportedFunction { .. } => "wasm imported function".to_string(),
             Object::Builtin(_, _, _, _) => "builtin function".to_string(),
             Object::BuiltinStd(_, _, _, _) => "builtin function".to_string(),
             Object::BuiltinStdAsync(_, _, _, _) => "async builtin function".to_string(),
@@ -191,6 +230,8 @@ impl Object {
             Object::Continue => "continue".to_string(),
             Object::ThrownValue(_) => "thrown value".to_string(),
             Object::Future(_) => "future".to_string(),
+            #[cfg(feature = "wasm")]
+            Object::WasmModule { name, .. } => format!("wasm module {}", name),
         }
     }
 }
@@ -235,6 +276,11 @@ impl fmt::Display for Object {
             }
             Object::Function(_, _, _) => write!(f, "[function]"),
             Object::AsyncFunction(_, _, _) => write!(f, "[async function]"),
+            Object::WasmImportedFunction {
+                ref module_name,
+                ref func_name,
+                ..
+            } => write!(f, "[wasm function: {}::{}]", module_name, func_name),
             Object::Builtin(ref name, _, _, _) => write!(f, "[built-in function: {}]", *name),
             Object::BuiltinStd(ref name, _, _, _) => write!(f, "[built-in function: {}]", *name),
             Object::BuiltinStdAsync(ref name, _, _, _) => {
@@ -263,6 +309,8 @@ impl fmt::Display for Object {
             Object::ThrownValue(ref o) => write!(f, "Thrown: {}", *o),
             Object::Future(_) => write!(f, "[future]"),
             Object::Module { ref name, .. } => write!(f, "[module: {}]", name),
+            #[cfg(feature = "wasm")]
+            Object::WasmModule { ref name, .. } => write!(f, "[wasm module: {}]", name),
         }
     }
 }

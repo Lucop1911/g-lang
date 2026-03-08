@@ -6,3 +6,4 @@ pub mod eval_data_structures;
 pub mod eval_structs;
 pub mod eval_expressions;
 pub mod eval_misc;
+pub mod wasm_loader;

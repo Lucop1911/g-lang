@@ -2,3 +2,4 @@
 *.giu
 /notes
 /.vscode
+/tests

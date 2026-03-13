@@ -8,12 +8,12 @@ use crate::{
     },
 };
 use crate::interpreter::builtins::methods::BuiltinMethods;
-use super::super::eval::{Evaluator, EvalFuture};
+use super::super::eval::Evaluator;
 
 impl Evaluator {
-    pub fn eval_struct_def(&mut self, name: Ident, fields: Vec<(Ident, Expr)>, methods: Vec<(Ident, Expr)>) -> EvalFuture {
+    pub fn eval_struct_def(&mut self, name: Ident, fields: Vec<(Ident, Expr)>, methods: Vec<(Ident, Expr)>) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let Ident(struct_name) = name.clone();
             
             let mut default_fields = HashMap::new();
@@ -37,12 +37,12 @@ impl Evaluator {
             self_clone.env.lock().unwrap().set(&struct_name, struct_obj.clone());
             
             Object::Null
-        })
+        }
     }
 
-    pub fn eval_struct_literal(&mut self, name: Ident, field_assignments: Vec<(Ident, Expr)>) -> EvalFuture {
+    pub fn eval_struct_literal(&mut self, name: Ident, field_assignments: Vec<(Ident, Expr)>) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let Ident(struct_name) = name;
             
             let (default_fields, methods) = match self_clone.env.lock().unwrap().get(&struct_name) {
@@ -66,12 +66,12 @@ impl Evaluator {
                 fields: instance_fields,
                 methods,
             }
-        })
+        }
     }
 
-    pub fn eval_field_access(&mut self, object_expr: Expr, field_name: String) -> EvalFuture {
+    pub fn eval_field_access(&mut self, object_expr: Expr, field_name: String) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let object = self_clone.eval_expr(object_expr).await;
             
             match object {
@@ -95,12 +95,12 @@ impl Evaluator {
                     format!("{} does not have fields", other.type_name())
                 ))
             }
-        })
+        }
     }
 
-    pub fn eval_field_assign(&mut self, object_expr: Expr, field_name: String, value_expr: Expr) -> EvalFuture {
+    pub fn eval_field_assign(&mut self, object_expr: Expr, field_name: String, value_expr: Expr) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let value = self_clone.eval_expr(value_expr).await;
             
             if let Expr::ThisExpr = object_expr {
@@ -128,12 +128,12 @@ impl Evaluator {
             Object::Error(RuntimeError::InvalidOperation(
                 "Can only assign to 'this.field', not other object fields".to_string()
             ))
-        })
+        }
     }
 
-    pub fn eval_method_call(&mut self, object_expr: Expr, method_name: String, args_expr: Vec<Expr>) -> EvalFuture {
+    pub fn eval_method_call(&mut self, object_expr: Expr, method_name: String, args_expr: Vec<Expr>) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let var_name_if_ident = if let Expr::IdentExpr(Ident(ref name)) = object_expr {
                 Some(name.clone())
             } else {
@@ -245,6 +245,6 @@ impl Evaluator {
                 Ok(obj) => obj,
                 Err(e) => Object::Error(e),
             }
-        })
+        }
     }
 }

@@ -17,10 +17,10 @@ impl Evaluator {
             match self_clone.obj_to_bool(object) {
                 Ok(b) => {
                     if b {
-                        self_clone.eval_blockstmt(conse).await
+                        self_clone.eval_blockstmt(&conse).await
                     } else {
                         match maybe_alter {
-                            Some(else_conse) => self_clone.eval_blockstmt(else_conse).await,
+                            Some(else_conse) => self_clone.eval_blockstmt(&else_conse).await,
                             _ => Object::Null,
                         }
                     }
@@ -30,14 +30,14 @@ impl Evaluator {
         })
     }
 
-    pub fn eval_while(&mut self, cond: Box<Expr>, body: Program) -> EvalFuture {
+    pub fn eval_while(&mut self, cond: Box<Expr>, body: Program) -> impl Future<Output = Object> + Send + '_ {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             loop {
-                let cond_result = self_clone.eval_expr(*cond.clone()).await;
+                let cond_result = self_clone.eval_expr((*cond).clone()).await;
                 match self_clone.obj_to_bool(cond_result) {
                     Ok(true) => {
-                        let result = self_clone.eval_blockstmt(body.clone()).await;
+                        let result = self_clone.eval_blockstmt(&body).await;
                         match result {
                             Object::Break => return Object::Null,
                             Object::Continue => continue,
@@ -50,12 +50,12 @@ impl Evaluator {
                     Err(e) => return e,
                 }
             }
-        })
+        }
     }
 
-    pub fn eval_for(&mut self, ident: Ident, iterable: Box<Expr>, body: Program) -> EvalFuture {
+    pub fn eval_for(&mut self, ident: Ident, iterable: Box<Expr>, body: Program) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let iter_obj = self_clone.eval_expr(*iterable).await;
 
             let items = match iter_obj {
@@ -73,7 +73,7 @@ impl Evaluator {
             for item in items {
                 self_clone.env.lock().unwrap().set(&var_name, item);
 
-                let result = self_clone.eval_blockstmt(body.clone()).await;
+                let result = self_clone.eval_blockstmt(&body).await;
                 match result {
                     Object::Break => return Object::Null,
                     Object::Continue => continue,
@@ -83,7 +83,7 @@ impl Evaluator {
                 }
             }
             Object::Null
-        })
+        }
     }
 
     pub fn eval_c_style_for(
@@ -92,9 +92,9 @@ impl Evaluator {
         cond: Option<Box<Expr>>,
         update: Option<Box<Stmt>>,
         body: Program,
-    ) -> EvalFuture {
+    ) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             if let Some(init_stmt) = init {
                 let result = self_clone.eval_statement(*init_stmt).await;
                 if let Object::Error(_) = result {
@@ -120,7 +120,7 @@ impl Evaluator {
                     break;
                 }
                 
-                let result = self_clone.eval_blockstmt(body.clone()).await;
+                let result = self_clone.eval_blockstmt(&body).await;
                 match result {
                     Object::Break => return Object::Null,
                     Object::Continue => {},
@@ -138,13 +138,19 @@ impl Evaluator {
             }
             
             Object::Null
-        })
+        }
     }
 
-    pub fn eval_try_catch_expr(&mut self, try_body: Program, catch_ident: Option<Ident>, catch_body: Option<Program>, finally_body: Option<Program>) -> EvalFuture {
+    pub fn eval_try_catch_expr(
+        &mut self, 
+        try_body: Program, 
+        catch_ident: Option<Ident>, 
+        catch_body: Option<Program>, 
+        finally_body: Option<Program>
+    ) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
-            let mut try_result = self_clone.eval_blockstmt(try_body).await;
+        async move {
+            let mut try_result = self_clone.eval_blockstmt(&try_body).await;
             let final_result: Object;
         
             let caught_exception_obj = match try_result.clone() {
@@ -161,14 +167,14 @@ impl Evaluator {
                         new_env.set(&e_name, exception);
                         self_clone.env = Arc::new(Mutex::new(new_env));
                         
-                        try_result = self_clone.eval_blockstmt(c_body).await;
+                        try_result = self_clone.eval_blockstmt(&c_body).await;
                         self_clone.env = old_env;
                     }
                 }
             }
         
             if let Some(f_body) = finally_body {
-                let finally_result = self_clone.eval_blockstmt(f_body).await;
+                let finally_result = self_clone.eval_blockstmt(&f_body).await;
                 match finally_result {
                     Object::ReturnValue(_) | Object::Break | Object::Continue | Object::ThrownValue(_) | Object::Error(_) => {
                         final_result = finally_result;
@@ -189,6 +195,6 @@ impl Evaluator {
                 Object::ReturnValue(_) | Object::Break | Object::Continue | Object::Error(_) => final_result,
                 _ => self_clone.returned(final_result), 
             }
-        })
+        }
     }
 }

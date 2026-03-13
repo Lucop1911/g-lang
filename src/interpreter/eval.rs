@@ -61,21 +61,21 @@ impl Evaluator {
         }
     }
 
-    pub fn eval_program(&mut self, prog: Program) -> EvalFuture {
+    pub fn eval_program(&mut self, prog: Program) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
-            let return_data = self_clone.eval_blockstmt(prog).await;
+        async move {
+            let return_data = self_clone.eval_blockstmt(&prog).await;
             self_clone.returned(return_data)
-        })
+        }
     }
 
-    pub fn eval_blockstmt(&mut self, prog: Program) -> EvalFuture {
+    pub fn eval_blockstmt<'a>(&'a mut self, prog: &'a Program) -> impl Future<Output = Object> + Send + 'a {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let mut result = Object::Null;
 
-            for stmt in prog.into_iter() {
-                result = self_clone.eval_statement(stmt).await;
+            for stmt in prog.iter() {
+                result = self_clone.eval_statement(stmt.clone()).await;
                 match result {
                     Object::ReturnValue(_) | Object::Break | Object::Continue | Object::Error(_) | Object::ThrownValue(_) => {
                         return result;
@@ -84,7 +84,7 @@ impl Evaluator {
                 }
             }
             result
-        })
+        }
     }
 
     pub fn eval_statement(&mut self, stmt: Stmt) -> EvalFuture {

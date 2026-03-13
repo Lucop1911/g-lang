@@ -7,7 +7,7 @@ use crate::{
         module_registry::ModuleRegistry, obj::Object
     },
 };
-use super::super::eval::{Evaluator, EvalFuture};
+use super::super::eval::Evaluator;
 
 impl Evaluator {
     pub fn register_ident(&mut self, ident: Ident, object: Object) -> Object {
@@ -16,9 +16,9 @@ impl Evaluator {
         object
     }
 
-    pub fn eval_import(&mut self, path: Vec<String>, items: ImportItems) -> EvalFuture {
+    pub fn eval_import(&mut self, path: Vec<String>, items: ImportItems) -> impl Future<Output = Object> + Send + '_  {
         let self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let path_clone = path.clone();
             let module_registry_arc = Arc::clone(&self_clone.module_registry);
             
@@ -68,6 +68,6 @@ impl Evaluator {
             }
             
             Object::Null
-        })
+        }
     }
 }

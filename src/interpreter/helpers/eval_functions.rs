@@ -9,7 +9,7 @@ use crate::{
     wasm::{WasmInstance, giulio_to_wasm_val, wasm_val_to_giulio},
 };
 use futures::stream::{FuturesUnordered, StreamExt};
-use super::super::eval::{Evaluator, EvalFuture};
+use super::super::eval::Evaluator;
 use wasmtime::Val;
 
 impl Evaluator {
@@ -74,10 +74,10 @@ impl Evaluator {
         params: Vec<Ident>,
         body: Program,
         f_env: &Arc<Mutex<Environment>>,
-    ) -> EvalFuture {
+    ) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
         let f_env_clone = Arc::clone(f_env);
-        Box::pin(async move {
+        async move {
             if args_expr.len() < params.len() {
                 return Object::Error(RuntimeError::WrongNumberOfArguments {
                     min: params.len(),
@@ -98,10 +98,10 @@ impl Evaluator {
                 new_env.set(&name, o);
             }
             self_clone.env = Arc::new(Mutex::new(new_env));
-            let object = self_clone.eval_blockstmt(body).await;
+            let object = self_clone.eval_blockstmt(&body).await;
             self_clone.env = old_env;
             self_clone.returned(object)
-        })
+        }
     }
 
     pub async fn eval_async_fn_call(
@@ -144,7 +144,7 @@ impl Evaluator {
             evaluator.env = Arc::new(Mutex::new(new_env));
             evaluator.in_async_context = true;
 
-            let result = evaluator.eval_blockstmt(body).await;
+            let result = evaluator.eval_blockstmt(&body).await;
             evaluator.returned(result)
         });
 
@@ -164,9 +164,9 @@ impl Evaluator {
         min_params: usize,
         max_params: usize,
         b_fn: BuiltinFunction,
-    ) -> EvalFuture {
+    ) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             if args_expr.len() < min_params || args_expr.len() > max_params {
                 return Object::Error(RuntimeError::WrongNumberOfArguments {
                     min: min_params,
@@ -184,7 +184,7 @@ impl Evaluator {
                 Ok(obj) => obj,
                 Err(e) => Object::Error(RuntimeError::InvalidArguments(e)),
             }
-        })
+        }
     }
 
     pub fn eval_std_call(
@@ -193,9 +193,9 @@ impl Evaluator {
         min_params: usize,
         max_params: usize,
         s_fn: StdFunction,
-    ) -> EvalFuture {
+    ) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             if args_expr.len() < min_params || args_expr.len() > max_params {
                 return Object::Error(RuntimeError::WrongNumberOfArguments {
                     min: min_params,
@@ -213,7 +213,7 @@ impl Evaluator {
                 Ok(obj) => obj,
                 Err(e) => Object::Error(e),
             }
-        })
+        }
     }
 
     pub fn eval_fn_call_direct(
@@ -221,9 +221,9 @@ impl Evaluator {
         args: Vec<Object>,
         params: Vec<Ident>,
         body: Program,
-    ) -> EvalFuture {
+    ) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             if args.len() != params.len() {
                 return Object::Error(RuntimeError::WrongNumberOfArguments {
                     min: params.len(),
@@ -237,8 +237,8 @@ impl Evaluator {
                 self_clone.env.lock().unwrap().set(&name, o);
             }
             
-            self_clone.eval_blockstmt(body).await
-        })
+            self_clone.eval_blockstmt(&body).await
+        }
     }
 
     pub async fn eval_wasm_fn_call(

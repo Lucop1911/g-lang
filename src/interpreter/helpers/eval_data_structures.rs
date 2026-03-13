@@ -4,12 +4,12 @@ use crate::{
     errors::RuntimeError,
     interpreter::obj::Object
 };
-use super::super::eval::{Evaluator, EvalFuture};
+use super::super::eval::{Evaluator};
 
 impl Evaluator {
-    pub fn eval_index_assign(&mut self, target_expr: Expr, index_expr: Expr, value_expr: Expr) -> EvalFuture {
+    pub fn eval_index_assign(&mut self, target_expr: Expr, index_expr: Expr, value_expr: Expr) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let index = self_clone.eval_expr(index_expr).await;
             let value = self_clone.eval_expr(value_expr).await;
             
@@ -114,23 +114,23 @@ impl Evaluator {
                     ))
                 }
             }
-        })
+        }
     }
 
-    pub fn eval_array(&mut self, exprs: Vec<Expr>) -> EvalFuture {
+    pub fn eval_array(&mut self, exprs: Vec<Expr>) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let mut new_vec = Vec::new();
             for e in exprs {
                 new_vec.push(self_clone.eval_expr(e).await);
             }
             Object::Array(new_vec)
-        })
+        }
     }
 
-    pub fn eval_hash(&mut self, hs: Vec<(Expr, Expr)>) -> EvalFuture {
+    pub fn eval_hash(&mut self, hs: Vec<(Expr, Expr)>) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let mut hashmap = HashMap::new();
             
             for (key_expr, val_expr) in hs {
@@ -147,12 +147,12 @@ impl Evaluator {
             }
             
             Object::Hash(hashmap)
-        })
+        }
     }
 
-    pub fn eval_index(&mut self, target_exp: Expr, id_exp: Expr) -> EvalFuture {
+    pub fn eval_index(&mut self, target_exp: Expr, id_exp: Expr) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let target = self_clone.eval_expr(target_exp).await;
             let index = self_clone.eval_expr(id_exp).await;
             match target {
@@ -184,6 +184,6 @@ impl Evaluator {
                 }
                 o => Object::Error(RuntimeError::NotHashable(o.type_name())),
             }
-        })
+        }
     }
 }

@@ -5,7 +5,7 @@ use crate::{
     interpreter::obj::Object
 };
 
-use super::super::eval::{Evaluator, EvalFuture};
+use super::super::eval::Evaluator;
 
 impl Evaluator {
     pub fn eval_this(&mut self) -> Object {
@@ -38,9 +38,9 @@ impl Evaluator {
         }
     }
 
-    pub fn eval_prefix(&mut self, prefix: Prefix, expr: Expr) -> EvalFuture {
+    pub fn eval_prefix(&mut self, prefix: Prefix, expr: Expr) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let object = self_clone.eval_expr(expr).await;
             match prefix {
                 Prefix::Not => match self_clone.obj_to_bool(object) {
@@ -75,12 +75,12 @@ impl Evaluator {
                     }
                 },
             }
-        })
+        }
     }
 
-    pub fn eval_infix(&mut self, infix: Infix, expr1: Expr, expr2: Expr) -> EvalFuture {
+    pub fn eval_infix(&mut self, infix: Infix, expr1: Expr, expr2: Expr) -> impl Future<Output = Object> + Send + '_  {
         let mut self_clone = self.clone();
-        Box::pin(async move {
+        async move {
             let object1 = self_clone.eval_expr(expr1).await;
             let object2 = self_clone.eval_expr(expr2).await;
             
@@ -113,6 +113,6 @@ impl Evaluator {
                     }
                 }
             }
-        })
+        }
     }
 }

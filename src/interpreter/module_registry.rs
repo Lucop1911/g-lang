@@ -6,13 +6,13 @@ use crate::std::io::*;
 use crate::std::json::*;
 use crate::std::http::*;
 use crate::std::env::*;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::fs;
 use std::sync::{Arc, Mutex};
 use crate::ast::ast::{Program, Ident};
-use crate::interpreter::obj::Object;
+use crate::interpreter::obj::{Object, HashMap};
 use crate::errors::RuntimeError;
+use ahash::HashMapExt;
 
 #[cfg(feature = "wasm")]
 use crate::wasm::{WasmRuntime, WasmStore};

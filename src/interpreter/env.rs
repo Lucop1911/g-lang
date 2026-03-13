@@ -1,6 +1,10 @@
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 use crate::{ast::ast::Ident, interpreter::obj::Object};
 use crate::interpreter::builtins::functions::BuiltinsFunctions;
+use std::hash::BuildHasherDefault;
+use ahash::{AHasher, HashMapExt};
+
+type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AHasher>>;
 
 #[derive(Debug, Clone)]
 pub struct Environment {

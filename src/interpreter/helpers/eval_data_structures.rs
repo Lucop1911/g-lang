@@ -1,10 +1,13 @@
-use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
+use ahash::{AHasher, HashMapExt};
 use crate::{
     ast::ast::{Expr, Ident},
     errors::RuntimeError,
     interpreter::obj::Object
 };
 use super::super::eval::{Evaluator};
+
+type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AHasher>>;
 
 impl Evaluator {
     pub fn eval_index_assign(&mut self, target_expr: Expr, index_expr: Expr, value_expr: Expr) -> impl Future<Output = Object> + Send + '_  {

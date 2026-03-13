@@ -1,7 +1,7 @@
-use crate::interpreter::obj::Object;
+use crate::interpreter::obj::{Object, HashMap};
 use crate::errors::RuntimeError;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use ahash::HashMapExt;
 
 pub fn http_get(args: Vec<Object>) -> Result<Object, RuntimeError> {
     let args = args;

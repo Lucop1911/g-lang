@@ -1,5 +1,8 @@
+use std::hash::BuildHasherDefault;
+use ahash::{AHasher, HashMapExt};
 use crate::interpreter::obj::Object;
-use std::collections::HashMap;
+
+type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AHasher>>;
 
 // Method only
 pub fn bset_fn(args: Vec<Object>) -> Result<Object, String> {

@@ -3,8 +3,9 @@ use crate::interpreter::module_registry::Module;
 use crate::interpreter::module_registry::ModuleRegistry;
 use tokio::fs;
 use std::sync::{Arc, Mutex};
-use crate::interpreter::obj::Object;
+use crate::interpreter::obj::{Object, HashMap};
 use crate::errors::RuntimeError;
+use ahash::HashMapExt;
 
 #[cfg(feature = "wasm")]
 use crate::wasm::WasmModule;
@@ -12,7 +13,6 @@ use crate::wasm::WasmModule;
 impl ModuleRegistry {
     #[cfg(feature = "wasm")]
     pub async fn load_wasm_module(module_registry_arc: Arc<Mutex<Self>>, path: &[String]) -> Result<Module, RuntimeError> {
-        use std::collections::HashMap;
 
         if path.is_empty() {
             return Err(RuntimeError::InvalidOperation(

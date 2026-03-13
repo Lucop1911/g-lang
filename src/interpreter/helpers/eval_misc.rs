@@ -1,10 +1,11 @@
-use std::collections::HashMap;
 use std::sync::Arc;
+use ahash::HashMapExt;
+
 use crate::{
     ast::ast::{Ident, ImportItems},
     errors::RuntimeError,
     interpreter::{
-        module_registry::ModuleRegistry, obj::Object
+        module_registry::ModuleRegistry, obj::{Object, HashMap}
     },
 };
 use super::super::eval::Evaluator;

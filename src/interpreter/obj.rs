@@ -1,7 +1,7 @@
+use ahash::AHasher;
 use num_bigint::BigInt;
-use std::collections::HashMap;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 use crate::ast::ast::{Ident, Program};
@@ -10,6 +10,8 @@ use crate::interpreter::env::Environment;
 
 #[cfg(feature = "wasm")]
 use crate::wasm::WasmInstance;
+
+pub type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AHasher>>;
 
 #[derive(Clone)]
 pub enum Object {

@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use ahash::HashMapExt;
 use crate::{
     ast::ast::{Expr, Ident},
     errors::RuntimeError,
     interpreter::{
-        env::Environment, obj::Object
+        env::Environment, obj::{Object, HashMap}
     },
 };
 use crate::interpreter::builtins::methods::BuiltinMethods;

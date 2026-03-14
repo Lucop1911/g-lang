@@ -15,6 +15,7 @@ G-lang is a lightweight, expressive language designed for simplicity and ease of
 - **REPL Mode**: Interactive Read-Eval-Print Loop for quick experimentation
 - **Standard Library**: Built-in functions for common operations
 - **Async and Await**: Support for asynchronous operations
+- **Wasm runtime**: Allows importing and running functions from .wasm and .wat files
 
 ## Installation
 

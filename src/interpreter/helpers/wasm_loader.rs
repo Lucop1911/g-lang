@@ -68,18 +68,10 @@ impl ModuleRegistry {
         };
 
         let mut store = runtime.create_store();
-        let instance = wasm_module.instantiate(&mut store)?;
+        let mut instance = wasm_module.instantiate(&mut store)?;
 
-        let all_export_names: Vec<String> = instance
-            .get_exports(&mut store)
-            .map(|export| export.name().to_string())
-            .collect();
-
-        let export_names: Vec<String> = all_export_names
-            .into_iter()
-            .filter(|name| instance.get_function(&mut store, name).is_some())
-            .collect();
-
+        let export_names = instance.get_export_names(&mut store);
+        
         let instance_arc = Arc::new(Mutex::new(Some(instance)));
 
         let mut exports = HashMap::new();
@@ -90,12 +82,6 @@ impl ModuleRegistry {
                 instance: Arc::clone(&instance_arc),
             });
         }
-        
-        let _wasm_module_obj = Object::WasmModule {
-            name: module_name.clone(),
-            exports: exports.clone(),
-            instance: instance_arc,
-        };
         
         {
             let mut registry = module_registry_arc.lock().unwrap();

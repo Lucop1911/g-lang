@@ -3,7 +3,10 @@ use crate::interpreter::obj::Object;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
-use wasmtime::{Memory, Store, Val, ValType};
+use wasmtime::{Memory, Store, ValType};
+
+#[cfg(feature = "wasm")]
+use wasmtime::component::Val as ComponentVal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WasmType {
@@ -87,87 +90,27 @@ impl Default for TypeMapping {
     }
 }
 
-pub fn g_to_wasm_val<T>(
-    obj: &Object,
-    memory: Option<&Memory>,
-    store: &mut Store<T>,
-) -> Result<Val, RuntimeError> {
+pub fn g_to_component_val(obj: &Object) -> Result<ComponentVal, RuntimeError> {
     match obj {
-        Object::Integer(n) => Ok(Val::I32(*n as i32)),
-        Object::Float(n) => Ok(Val::F64(n.to_bits())),
-        Object::Boolean(b) => Ok(Val::I32(if *b { 1 } else { 0 })),
-        Object::String(s) => {
-            if let Some(mem) = memory {
-                let bytes = s.as_bytes();
-                let ptr = allocate_in_wasm_memory(mem, store, bytes.len())?;
-                mem.write(&mut *store, ptr, bytes).map_err(|e| {
-                    RuntimeError::InvalidOperation(format!(
-                        "Failed to write string to wasm memory: {}",
-                        e
-                    ))
-                })?;
-                Ok(Val::I32(ptr as i32))
-            } else {
-                Err(RuntimeError::InvalidOperation(
-                    "Cannot pass string to wasm without memory".to_string(),
-                ))
-            }
-        }
-        Object::Array(arr) => {
-            if let Some(mem) = memory {
-                let element_size = 8;
-                let total_size = arr.len() * element_size;
-                let ptr = allocate_in_wasm_memory(mem, store, total_size)?;
-
-                for (i, item) in arr.iter().enumerate() {
-                    let offset = ptr + (i * element_size);
-                    let val = g_to_wasm_val(item, Some(mem), store)?;
-                    match val {
-                        Val::I32(n) => {
-                            let bytes = n.to_le_bytes();
-                            mem.write(&mut *store, offset, &bytes).map_err(|e| {
-                                RuntimeError::InvalidOperation(format!(
-                                    "Failed to write array element to wasm memory: {}",
-                                    e
-                                ))
-                            })?;
-                        }
-                        Val::F64(n) => {
-                            let bytes = n.to_le_bytes();
-                            mem.write(&mut *store, offset, &bytes).map_err(|e| {
-                                RuntimeError::InvalidOperation(format!(
-                                    "Failed to write array element to wasm memory: {}",
-                                    e
-                                ))
-                            })?;
-                        }
-                        _ => {
-                            return Err(RuntimeError::InvalidOperation(
-                                "Unsupported array element type for wasm".to_string(),
-                            ));
-                        }
-                    }
-                }
-                Ok(Val::I32(ptr as i32))
-            } else {
-                Err(RuntimeError::InvalidOperation(
-                    "Cannot pass array to wasm without memory".to_string(),
-                ))
-            }
-        }
+        Object::Integer(n) => Ok(ComponentVal::S32(*n as i32)),
+        Object::Float(n) => Ok(ComponentVal::Float64(*n)),
+        Object::Boolean(b) => Ok(ComponentVal::S32(if *b { 1 } else { 0 })),
         _ => Err(RuntimeError::InvalidOperation(format!(
-            "Cannot convert {:?} to wasm value",
+            "Cannot convert {:?} to wasm component value",
             obj
         ))),
     }
 }
 
-pub fn wasm_val_to_g(val: &Val) -> Result<Object, RuntimeError> {
+pub fn component_val_to_g(val: &ComponentVal) -> Result<Object, RuntimeError> {
     match val {
-        Val::I32(n) => Ok(Object::Integer(*n as i64)),
-        Val::I64(n) => Ok(Object::Integer(*n as i64)),
-        Val::F32(n) => Ok(Object::Float(f32::from_bits(*n) as f64)),
-        Val::F64(n) => Ok(Object::Float(f64::from_bits(*n))),
+        ComponentVal::S32(n) => Ok(Object::Integer(*n as i64)),
+        ComponentVal::U32(n) => Ok(Object::Integer(*n as i64)),
+        ComponentVal::S64(n) => Ok(Object::Integer(*n as i64)),
+        ComponentVal::U64(n) => Ok(Object::Integer(*n as i64)),
+        ComponentVal::Float32(n) => Ok(Object::Float(*n as f64)),
+        ComponentVal::Float64(n) => Ok(Object::Float(*n)),
+        ComponentVal::Bool(b) => Ok(Object::Boolean(*b)),
         _ => Err(RuntimeError::InvalidOperation(
             "Unsupported wasm value type".to_string(),
         )),

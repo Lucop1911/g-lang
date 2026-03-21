@@ -9,8 +9,8 @@ mod tests {
     use super::*;
     use crate::errors::RuntimeError;
     use crate::interpreter::obj::Object;
-    use type_conversions::{g_to_wasm_val, wasm_val_to_g, TypeMapping, WasmType};
-    use wasmtime::{Store, Val};
+    use type_conversions::{component_val_to_g, g_to_component_val, TypeMapping, WasmType};
+    use wasmtime::component::Val;
 
     #[test]
     fn test_type_mapping_creation() {
@@ -20,66 +20,76 @@ mod tests {
         assert_eq!(mapping.get_wasm_type("Float"), Some(WasmType::F64));
         assert_eq!(mapping.get_wasm_type("Bool"), Some(WasmType::I32));
 
-        assert_eq!(
-            mapping.get_g_type(WasmType::I32),
-            Some("Int".to_string())
-        );
-        assert_eq!(
-            mapping.get_g_type(WasmType::F64),
-            Some("Float".to_string())
-        );
+        assert_eq!(mapping.get_g_type(WasmType::I32), Some("Int".to_string()));
+        assert_eq!(mapping.get_g_type(WasmType::F64), Some("Float".to_string()));
     }
 
     #[test]
-    fn test_g_int_to_wasm() {
+    fn test_g_int_to_component() {
         let obj = Object::Integer(42);
-        let mut store: Store<()> = Store::default();
-        let val = g_to_wasm_val(&obj, None, &mut store);
+        let val = g_to_component_val(&obj);
 
         assert!(val.is_ok());
-        assert_eq!(val.unwrap().i32(), Some(42));
+        match val.unwrap() {
+            Val::S32(n) => assert_eq!(n, 42),
+            _ => panic!("Expected S32"),
+        }
     }
 
     #[test]
-    fn test_g_float_to_wasm() {
+    fn test_g_float_to_component() {
         let obj = Object::Float(3.14);
-        let mut store: Store<()> = Store::default();
-        let val = g_to_wasm_val(&obj, None, &mut store);
+        let val = g_to_component_val(&obj);
 
         assert!(val.is_ok());
-        let bits = val.unwrap().f64();
-        assert!(bits.is_some());
+        match val.unwrap() {
+            Val::Float64(n) => assert!((n - 3.14).abs() < 0.001),
+            _ => panic!("Expected Float64"),
+        }
     }
 
     #[test]
-    fn test_g_bool_to_wasm() {
+    fn test_g_bool_to_component() {
         let obj_true = Object::Boolean(true);
         let obj_false = Object::Boolean(false);
-        let mut store: Store<()> = Store::default();
 
-        let val_true = g_to_wasm_val(&obj_true, None, &mut store).unwrap();
-        let val_false = g_to_wasm_val(&obj_false, None, &mut store).unwrap();
+        let val_true = g_to_component_val(&obj_true).unwrap();
+        let val_false = g_to_component_val(&obj_false).unwrap();
 
-        assert_eq!(val_true.i32(), Some(1));
-        assert_eq!(val_false.i32(), Some(0));
+        match (val_true, val_false) {
+            (Val::S32(t), Val::S32(f)) => {
+                assert_eq!(t, 1);
+                assert_eq!(f, 0);
+            }
+            _ => panic!("Expected S32"),
+        }
     }
 
     #[test]
-    fn test_wasm_val_to_g_i32() {
-        let val = Val::I32(42);
-        let obj = wasm_val_to_g(&val);
+    fn test_component_val_to_g_i32() {
+        let val = Val::S32(42);
+        let obj = component_val_to_g(&val);
 
         assert!(obj.is_ok());
         assert_eq!(obj.unwrap(), Object::Integer(42));
     }
 
     #[test]
-    fn test_wasm_val_to_g_f64() {
-        let val = Val::F64(3.14_f64.to_bits());
-        let obj = wasm_val_to_g(&val);
+    fn test_component_val_to_g_f64() {
+        let val = Val::Float64(3.14);
+        let obj = component_val_to_g(&val);
 
         assert!(obj.is_ok());
         assert_eq!(obj.unwrap(), Object::Float(3.14));
+    }
+
+    #[test]
+    fn test_component_val_to_g_bool() {
+        let val = Val::Bool(true);
+        let obj = component_val_to_g(&val);
+
+        assert!(obj.is_ok());
+        assert_eq!(obj.unwrap(), Object::Boolean(true));
     }
 
     #[test]
@@ -98,7 +108,13 @@ mod tests {
     }
 
     #[test]
-    fn test_wasm_module_from_wat() {
+    fn test_wasm_store_creation() {
+        let runtime = WasmRuntime::new().unwrap();
+        let _store = runtime.create_store();
+    }
+
+    #[test]
+    fn test_classic_module_from_wat() {
         let wat = r#"
             (module
                 (func $add (param $a i32) (param $b i32) (result i32)
@@ -120,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wasm_function_call() {
+    fn test_classic_function_call() {
         let wat = r#"
             (module
                 (func $add (param $a i32) (param $b i32) (result i32)
@@ -143,22 +159,28 @@ mod tests {
         let instance = module.instantiate(&mut store).unwrap();
 
         let result = instance
-            .call_func_with_args(&mut store, "add", &[Val::I32(5), Val::I32(3)])
+            .call_func_with_args(&mut store, "add", &[Val::S32(5), Val::S32(3)])
             .unwrap();
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].i32(), Some(8));
+        match result[0] {
+            Val::S32(n) => assert_eq!(n, 8),
+            _ => panic!("Expected S32"),
+        }
 
         let answer = instance
             .call_func_with_args(&mut store, "get_answer", &[])
             .unwrap();
 
         assert_eq!(answer.len(), 1);
-        assert_eq!(answer[0].i32(), Some(42));
+        match answer[0] {
+            Val::S32(n) => assert_eq!(n, 42),
+            _ => panic!("Expected S32"),
+        }
     }
 
     #[test]
-    fn test_wasm_memory() {
+    fn test_classic_memory() {
         let wat = r#"
             (module
                 (memory 1)
@@ -184,41 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wasm_string_return() {
-        let wat = r#"
-            (module
-                (memory 1)
-                (func $get_greeting (result i32)
-                    i32.const 0)
-                (data (i32.const 0) "Hello from WASM!")
-                (export "get_greeting" (func $get_greeting))
-                (export "memory" (memory 0))
-            )
-        "#;
-
-        let runtime = WasmRuntime::new().unwrap();
-        let module =
-            WasmModule::load_from_bytes(runtime.engine(), "test_string", wat.as_bytes()).unwrap();
-
-        let mut store = runtime.create_store();
-        let instance = module.instantiate(&mut store).unwrap();
-
-        let ptr = instance
-            .call_func_with_args(&mut store, "get_greeting", &[])
-            .unwrap()[0]
-            .i32()
-            .unwrap();
-
-        let memory = instance.get_memory().unwrap();
-        let mut data = vec![0u8; 20];
-        memory.read(&mut store, ptr as usize, &mut data).unwrap();
-        let data_string = std::str::from_utf8(&data).unwrap();
-        let trimmed = data_string.trim_end_matches('\0');
-        assert_eq!(trimmed, "Hello from WASM!");
-    }
-
-    #[test]
-    fn test_wasm_call_with_g_objects() {
+    fn test_classic_call_with_g_objects() {
         let wat = r#"
             (module
                 (func $add (param $a i32) (param $b i32) (result i32)
@@ -243,12 +231,9 @@ mod tests {
         let instance = module.instantiate(&mut store).unwrap();
 
         let result = {
-            let memory = instance.get_memory();
             let args = vec![Object::Integer(5), Object::Integer(3)];
-            let wasm_args: Result<Vec<Val>, RuntimeError> = args
-                .iter()
-                .map(|arg| g_to_wasm_val(arg, memory, &mut store))
-                .collect();
+            let wasm_args: Result<Vec<Val>, RuntimeError> =
+                args.iter().map(|arg| g_to_component_val(arg)).collect();
             let wasm_args = wasm_args.unwrap();
             instance
                 .call_func_with_args(&mut store, "add", &wasm_args)
@@ -256,15 +241,15 @@ mod tests {
         };
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].i32(), Some(8));
+        match result[0] {
+            Val::S32(n) => assert_eq!(n, 8),
+            _ => panic!("Expected S32"),
+        }
 
         let mul_result = {
-            let memory = instance.get_memory();
             let args = vec![Object::Integer(4), Object::Integer(7)];
-            let wasm_args: Result<Vec<Val>, RuntimeError> = args
-                .iter()
-                .map(|arg| g_to_wasm_val(arg, memory, &mut store))
-                .collect();
+            let wasm_args: Result<Vec<Val>, RuntimeError> =
+                args.iter().map(|arg| g_to_component_val(arg)).collect();
             let wasm_args = wasm_args.unwrap();
             instance
                 .call_func_with_args(&mut store, "multiply", &wasm_args)
@@ -272,11 +257,14 @@ mod tests {
         };
 
         assert_eq!(mul_result.len(), 1);
-        assert_eq!(mul_result[0].i32(), Some(28));
+        match mul_result[0] {
+            Val::S32(n) => assert_eq!(n, 28),
+            _ => panic!("Expected S32"),
+        }
     }
 
     #[test]
-    fn test_call_with_float() {
+    fn test_classic_call_with_float() {
         let wat = r#"
             (module
                 (func $add_float (param $a f64) (param $b f64) (result f64)
@@ -295,12 +283,9 @@ mod tests {
         let instance = module.instantiate(&mut store).unwrap();
 
         let result = {
-            let memory = instance.get_memory();
             let args = vec![Object::Float(1.5), Object::Float(2.5)];
-            let wasm_args: Result<Vec<Val>, RuntimeError> = args
-                .iter()
-                .map(|arg| g_to_wasm_val(arg, memory, &mut store))
-                .collect();
+            let wasm_args: Result<Vec<Val>, RuntimeError> =
+                args.iter().map(|arg| g_to_component_val(arg)).collect();
             let wasm_args = wasm_args.unwrap();
             instance
                 .call_func_with_args(&mut store, "add_float", &wasm_args)
@@ -308,42 +293,9 @@ mod tests {
         };
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].f64(), Some(4.0));
-    }
-
-    #[test]
-    fn test_call_with_boolean() {
-        let wat = r#"
-            (module
-                (func $test_bool (param $a i32) (result i32)
-                    local.get $a
-                    i32.const 1
-                    i32.add)
-                (export "test_bool" (func $test_bool))
-            )
-        "#;
-
-        let runtime = WasmRuntime::new().unwrap();
-        let module =
-            WasmModule::load_from_bytes(runtime.engine(), "bool_test", wat.as_bytes()).unwrap();
-
-        let mut store = runtime.create_store();
-        let instance = module.instantiate(&mut store).unwrap();
-
-        let result = {
-            let memory = instance.get_memory();
-            let args = vec![Object::Boolean(true)];
-            let wasm_args: Result<Vec<Val>, RuntimeError> = args
-                .iter()
-                .map(|arg| g_to_wasm_val(arg, memory, &mut store))
-                .collect();
-            let wasm_args = wasm_args.unwrap();
-            instance
-                .call_func_with_args(&mut store, "test_bool", &wasm_args)
-                .unwrap()
-        };
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].i32(), Some(2));
+        match result[0] {
+            Val::Float64(n) => assert!((n - 4.0).abs() < 0.001),
+            _ => panic!("Expected Float64"),
+        }
     }
 }

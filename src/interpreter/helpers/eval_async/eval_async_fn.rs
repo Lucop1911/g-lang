@@ -6,11 +6,11 @@ use crate::{
     interpreter::{
         env::Environment, obj::{BuiltinFunction, Object, StdFunction}
     },
-    wasm::{WasmInstance, g_to_wasm_val, wasm_val_to_g},
+    wasm::{WasmInstance, g_to_component_val, component_val_to_g},
 };
 use futures::stream::{FuturesUnordered, StreamExt};
 use super::super::super::eval::Evaluator;
-use wasmtime::Val;
+use wasmtime::component::Val;
 
 impl Evaluator {
     pub async fn async_eval_call(&mut self, fn_expr: Expr, args_expr: Vec<Expr>) -> Object {
@@ -289,11 +289,9 @@ impl Evaluator {
                 )),
             };
             
-            let memory = inst.get_memory();
-            
             let wasm_args: Result<Vec<Val>, RuntimeError> = args
                 .iter()
-                .map(|arg| g_to_wasm_val(arg, memory, store))
+                .map(|arg| g_to_component_val(arg))
                 .collect();
             
             let wasm_args = match wasm_args {
@@ -307,7 +305,7 @@ impl Evaluator {
                     if results.is_empty() {
                         Ok(Object::Null)
                     } else {
-                        wasm_val_to_g(&results[0])
+                        component_val_to_g(&results[0])
                     }
                 })
         };

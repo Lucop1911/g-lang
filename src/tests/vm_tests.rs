@@ -370,6 +370,21 @@ try {
     assert_eq!(evaluated, Object::String("error!".to_string()));
 }
 
+#[tokio::test]
+async fn vm_test_try_catch_division_by_zero() {
+    let input = r#"
+        let result = try {
+            10 / 0;
+        } catch (e) {
+            42;
+        };
+        result
+    "#;
+    let evaluated = vm_test_helper(input).await;
+    assert_eq!(evaluated, Object::Integer(42));
+}
+
+
 // ─── Tuple Destructuring ─────────────────────────────────────────────
 
 #[tokio::test]

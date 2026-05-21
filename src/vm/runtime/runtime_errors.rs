@@ -102,8 +102,8 @@ impl fmt::Display for RuntimeError {
                 write!(f, "Undefined variable: '{}'", name)
             }
             RuntimeError::InvalidOperation(op) => write!(f, "Invalid operation: {}", op),
-            RuntimeError::DivisionByZero => write!(f, "Invalid operation, Division by zero"),
-            RuntimeError::ModuloByZero => write!(f, "Invalid operation, Modulo by zero"),
+            RuntimeError::DivisionByZero => write!(f, "Division by zero"),
+            RuntimeError::ModuloByZero => write!(f, "Modulo by zero"),
             RuntimeError::IndexOutOfBounds { index, length } => {
                 write!(
                     f,

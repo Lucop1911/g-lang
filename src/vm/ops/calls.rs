@@ -373,8 +373,6 @@ pub fn call_async_function_vm(
         vm.set_root_local_names(local_names);
         vm.set_root_closure_env(Arc::clone(&globals_with_locals));
 
-        let result = vm.run(Arc::clone(&chunk)).await;
-        // Result is already Result<Object, RuntimeError>, which matches our return type
-        result
+        return vm.run(Arc::clone(&chunk)).await;
     })
 }

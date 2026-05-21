@@ -22,14 +22,14 @@ num-bigint = "0.4"
 num-traits = "0.2"
 rand = "0.9.4"
 serde_json = "1.0.149"
-tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread", "fs", "time", "sync", "macros"] }
+tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "fs", "time", "sync", "macros"] }
 futures = "0.3"
 reqwest = { version = "0.13.3", features = ["rustls"] }
 wasmtime = { version = "44.0.1", default-features = false, features = ["cranelift", "runtime", "component-model"] }
 ahash = "0.8.12"
 wasmtime-wasi = { version = "44.0.1", features = ["p2"] }
 wasmtime-wasi-http = "44.0.1"
-wat = "1.248.0"
+wat = "1.249.0"
 
 [profile.dev]
 debug = 0

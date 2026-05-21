@@ -388,47 +388,64 @@ impl VirtualMachine {
                     }
                     0x23 => { // OpDivide
                         let b = self.stack.pop().unwrap_or(Object::Null);
-                        if let Some(a) = self.stack.last_mut() {
-                            let result = match (&*a, b) {
-                                (Object::Integer(ia), Object::Integer(ib)) => {
-                                    if ib == 0 { return Err(RuntimeError::DivisionByZero); }
-                                    Object::Integer(ia / ib)
-                                }
-                                (Object::Float(fa), Object::Float(fb)) => {
-                                    if fb == 0.0 { return Err(RuntimeError::DivisionByZero); }
-                                    Object::Float(fa / fb)
-                                }
-                                (a_val, b_val) => {
-                                    match (a_val.clone(), b_val) {
-                                        (Object::Error(e), _) => return Err(*e),
-                                        (_, Object::Error(e)) => return Err(*e),
-                                        (a, b) => ops::arithmetic::divide(a, b),
-                                    }
-                                }
-                            };
-                            *a = result;
+                        let a = self.stack.pop().unwrap_or(Object::Null);
+
+                        let has_handlers = !self.exception_handlers.is_empty();
+                        if (matches!((&a, &b), (Object::Float(_), Object::Float(fb)) if *fb == 0.0) 
+                            || matches!((&a, &b), (Object::Integer(_), Object::Integer(ib)) if *ib == 0)) 
+                            && has_handlers {
+                                self.stack.push(a);
+                                self.stack.push(b);
+                                break 'sync_loop;
                         }
+
+                        let result = match (&a, b) {
+                            (Object::Integer(ia), Object::Integer(ib)) => {
+                                if ib == 0 { return Err(RuntimeError::DivisionByZero); }
+                                Object::Integer(ia / ib)
+                            }
+                            (Object::Float(fa), Object::Float(fb)) => {
+                                if fb == 0.0 { return Err(RuntimeError::DivisionByZero); }
+                                Object::Float(fa / fb)
+                            }
+                            (a_val, b_val) => {
+                                match (a_val.clone(), b_val) {
+                                    (Object::Error(e), _) => return Err(*e),
+                                    (_, Object::Error(e)) => return Err(*e),
+                                    (a, b) => ops::arithmetic::divide(a, b),
+                                }
+                            }
+                        };
+                        self.stack.push(result);
                         ip += 1;
                         continue 'sync_loop;
                     }
                     0x24 => { // OpModulo
                         let b = self.stack.pop().unwrap_or(Object::Null);
-                        if let Some(a) = self.stack.last_mut() {
-                            let result = match (&*a, b) {
-                                (Object::Integer(ia), Object::Integer(ib)) => {
-                                    if ib == 0 { return Err(RuntimeError::DivisionByZero); }
-                                    Object::Integer(ia % ib)
-                                }
-                                (a_val, b_val) => {
-                                    match (a_val.clone(), b_val) {
-                                        (Object::Error(e), _) => return Err(*e),
-                                        (_, Object::Error(e)) => return Err(*e),
-                                        (a, b) => ops::arithmetic::modulo(a, b),
-                                    }
-                                }
-                            };
-                            *a = result;
+                        let a = self.stack.pop().unwrap_or(Object::Null);
+
+                        let has_handlers = !self.exception_handlers.is_empty();
+                        if has_handlers && matches!((&a, &b), (Object::Integer(_), Object::Integer(ib)) if *ib == 0)
+                        {
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            break 'sync_loop;
                         }
+
+                        let result = match (&a, b) {
+                            (Object::Integer(ia), Object::Integer(ib)) => {
+                                if ib == 0 { return Err(RuntimeError::DivisionByZero); }
+                                Object::Integer(ia % ib)
+                            }
+                            (a_val, b_val) => {
+                                match (a_val.clone(), b_val) {
+                                    (Object::Error(e), _) => return Err(*e),
+                                    (_, Object::Error(e)) => return Err(*e),
+                                    (a, b) => ops::arithmetic::modulo(a, b),
+                                }
+                            }
+                        };
+                        self.stack.push(result);
                         ip += 1;
                         continue 'sync_loop;
                     }
@@ -900,13 +917,25 @@ impl VirtualMachine {
             Opcode::OpDivide => {
                 let b = self.stack.pop().unwrap_or(Object::Null);
                 let a = self.stack.pop().unwrap_or(Object::Null);
-                self.stack.push(ops::arithmetic::divide(a, b));
+                let result = ops::arithmetic::divide(a, b);
+                if let Object::Error(_) = &result
+                    && !self.exception_handlers.is_empty() {
+                        self.stack.push(Object::ThrownValue(Box::new(result)));
+                        return Ok(ExecResult::Throw);
+                }
+                self.stack.push(result);
                 Ok(ExecResult::Continue)
             }
             Opcode::OpModulo => {
                 let b = self.stack.pop().unwrap_or(Object::Null);
                 let a = self.stack.pop().unwrap_or(Object::Null);
-                self.stack.push(ops::arithmetic::modulo(a, b));
+                let result = ops::arithmetic::modulo(a, b);
+                if let Object::Error(_) = &result
+                    && !self.exception_handlers.is_empty() {
+                        self.stack.push(Object::ThrownValue(Box::new(result)));
+                        return Ok(ExecResult::Throw);
+                }
+                self.stack.push(result);
                 Ok(ExecResult::Continue)
             }
             Opcode::OpEqual => {

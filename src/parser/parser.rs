@@ -739,11 +739,16 @@ fn parse_match_expr(input: Tokens) -> IResult<Tokens, Expr> {
         let (ia, pattern) = parse_pattern(i)?;
         let (ib, _) = fat_arrow_tag(ia)?;
         let (ic, body) = alt((
-            parse_block_stmt,
-            map(parse_expr, |e| vec![Stmt::ExprValueStmt(e)]),
+            map(
+                tuple((parse_block_stmt, opt(comma_tag))),
+                |(body, _)| body,
+            ),
+            map(
+                tuple((parse_expr, comma_tag)),
+                |(e, _)| vec![Stmt::ExprValueStmt(e)],
+            ),
         ))(ib)?;
-        let (id, _) = opt(comma_tag)(ic)?;
-        Ok((id, (pattern, body)))
+        Ok((ic, (pattern, body)))
     }))(i2)?;
     Ok((i3, Expr::MatchExpr {
         value: Box::new(value),

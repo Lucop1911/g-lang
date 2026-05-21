@@ -359,6 +359,9 @@ impl Compiler {
             Expr::AwaitExpr(expr) => {
                 functions::compile_await_expr(self, expr, line);
             }
+            Expr::MatchExpr { value, arms } => {
+                control_flow::compile_match_expr(self, value, arms, line);
+            }
         }
     }
 

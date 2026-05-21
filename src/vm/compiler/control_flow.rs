@@ -1,8 +1,10 @@
 //! Control flow compilation: if/else, while, for-in, c-style for, break, continue.
 
-use crate::ast::ast::{Expr, Ident, Program, Stmt};
+use crate::ast::ast::{Expr, Ident, Pattern, Program, Stmt};
+use crate::ast::ast::Literal;
 use crate::vm::compiler::{Compiler, JumpPatch, LoopContext};
 use crate::vm::instruction::Instruction;
+use crate::vm::obj::Object;
 
 /// Compiles an if/else expression.
 pub(crate) fn compile_if_expr(
@@ -211,7 +213,55 @@ pub(crate) fn compile_cstyle_for(
     compiler.emit_constant(Object::Null, line);
 }
 
-/// Emits a `break` instruction and records it for backpatching.
+/// Compiles a match expression.
+pub(crate) fn compile_match_expr(
+    compiler: &mut Compiler,
+    value: &Expr,
+    arms: &[(Pattern, Program)],
+    line: u16,
+) {
+    let mut end_jumps: Vec<JumpPatch> = Vec::new();
+
+    compiler.compile_expression(value, line);
+
+    for (i, (pattern, body)) in arms.iter().enumerate() {
+        match pattern {
+            Pattern::Literal(lit) => {
+                compiler.emit(Instruction::Dup, line);
+                let lit_obj = match lit {
+                    Literal::IntLiteral(n) => Object::Integer(*n),
+                    Literal::BigIntLiteral(b) => Object::BigInteger(Box::new(b.clone())),
+                    Literal::FloatLiteral(f) => Object::Float(*f),
+                    Literal::BoolLiteral(b) => Object::Boolean(*b),
+                    Literal::StringLiteral(s) => Object::String(s.clone()),
+                    Literal::NullLiteral => Object::Null,
+                };
+                compiler.emit_constant(lit_obj, line);
+                compiler.emit(Instruction::Equal, line);
+                let next_arm = compiler.emit_pop_jump_if_false(line);
+
+                compiler.emit(Instruction::Pop, line);
+                compile_program_body(compiler, body, false);
+
+                if i < arms.len() - 1 {
+                    end_jumps.push(compiler.emit_jump(line));
+                }
+                compiler.patch_jump(next_arm);
+            }
+            Pattern::Wildcard => {
+                compiler.emit(Instruction::Pop, line);
+                compile_program_body(compiler, body, false);
+                if i < arms.len() - 1 {
+                    end_jumps.push(compiler.emit_jump(line));
+                }
+            }
+        }
+    }
+
+    for jump in end_jumps {
+        compiler.patch_jump(jump);
+    }
+}
 pub(crate) fn compile_break(compiler: &mut Compiler, line: u16) {
     if compiler.loop_contexts.is_empty() {
         return;

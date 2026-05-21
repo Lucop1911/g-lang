@@ -130,6 +130,16 @@ pub enum Expr {
         body: Program,
     },
     AwaitExpr(Box<Expr>),
+    MatchExpr {
+        value: Box<Expr>,
+        arms: Vec<(Pattern, Program)>,
+    },
+}
+
+#[derive(PartialEq, Debug, Clone, Hash)]
+pub enum Pattern {
+    Wildcard,
+    Literal(Literal),
 }
 
 /// Runtime literal values as they appear in source.

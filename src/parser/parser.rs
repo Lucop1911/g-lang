@@ -15,7 +15,7 @@ use nom::{branch::*, IResult};
 use std::result::Result::*;
 
 use crate::ast::ast::{
-    Expr, Ident, ImportItems, Infix, Literal, Precedence, Prefix, Program, Stmt,
+    Expr, Ident, ImportItems, Infix, Literal, Pattern, Precedence, Prefix, Program, Stmt,
 };
 use crate::lexer::token::{Token, Tokens};
 use crate::parser::await_ctx_helpers::validate_await_usage;
@@ -113,6 +113,8 @@ tag_token!(try_tag, Token::Try);
 tag_token!(catch_tag, Token::Catch);
 tag_token!(finally_tag, Token::Finally);
 tag_token!(throw_tag, Token::Throw);
+tag_token!(match_tag, Token::Match);
+tag_token!(fat_arrow_tag, Token::FatArrow);
 tag_token!(async_tag, Token::Async);
 tag_token!(await_tag, Token::Await);
 
@@ -270,11 +272,12 @@ fn parse_expr_or_assign_stmt(input: Tokens) -> IResult<Tokens, Stmt> {
                 &expr,
                 Expr::IfExpr { .. }
                     | Expr::FnExpr { .. }
-                    | Expr::AsyncFnExpr { .. } // Added AsyncFnExpr
+                    | Expr::AsyncFnExpr { .. }
                     | Expr::WhileExpr { .. }
                     | Expr::ForExpr { .. }
                     | Expr::CStyleForExpr { .. }
                     | Expr::TryCatchExpr { .. }
+                    | Expr::MatchExpr { .. }
             );
             let is_trailing_in_block = peek_matches(after_expr, Token::RBrace);
 
@@ -429,7 +432,7 @@ fn parse_let_stmt(input: Tokens) -> IResult<Tokens, Stmt> {
         (remaining, vec![expr])
     };
 
-    let (i5, _) = semicolon_tag(i4)?;
+    let (i5, _) = opt(semicolon_tag)(i4)?;
 
     if idents.len() == 1 && values.len() == 1 {
         Ok((i5, Stmt::LetStmt(idents.remove(0), values.remove(0))))
@@ -483,6 +486,7 @@ fn parse_atom_expr(input: Tokens) -> IResult<Tokens, Expr> {
         parse_fn_expr,
         parse_await_expr,
         parse_if_expr,
+        parse_match_expr,
         parse_this_expr,
         parse_array_expr,
         parse_hash_expr,
@@ -608,18 +612,21 @@ fn parse_ident_or_struct_literal(input: Tokens) -> IResult<Tokens, Expr> {
     let (after_ident, ident) = parse_ident(input)?;
 
     if peek_matches(after_ident, Token::LBrace) {
-        let (i1, fields) = braced(comma_separated0(separated_pair(
+        match braced(comma_separated0(separated_pair(
             parse_ident,
             colon_tag,
             parse_expr,
-        )))(after_ident)?;
-        Ok((
-            i1,
-            Expr::StructLiteral {
-                name: ident,
-                fields,
-            },
-        ))
+        )))(after_ident)
+        {
+            Ok((i1, fields)) => Ok((
+                i1,
+                Expr::StructLiteral {
+                    name: ident,
+                    fields,
+                },
+            )),
+            Err(_) => Ok((after_ident, Expr::IdentExpr(ident))),
+        }
     } else {
         Ok((after_ident, Expr::IdentExpr(ident)))
     }
@@ -709,6 +716,39 @@ fn parse_try_catch_expr(input: Tokens) -> IResult<Tokens, Expr> {
             finally_body,
         },
     ))
+}
+
+fn parse_pattern(input: Tokens) -> IResult<Tokens, Pattern> {
+    let (i1, t1) = take(1usize)(input)?;
+    if t1.token.is_empty() {
+        return Err(Err::Error(Error::new(input, ErrorKind::Tag)));
+    }
+    match &t1.token[0] {
+        Token::Ident(s) if s == "_" => Ok((i1, Pattern::Wildcard)),
+        _ => {
+            let (i2, lit) = parse_literal(input)?;
+            Ok((i2, Pattern::Literal(lit)))
+        }
+    }
+}
+
+fn parse_match_expr(input: Tokens) -> IResult<Tokens, Expr> {
+    let (i1, _) = match_tag(input)?;
+    let (i2, value) = parse_expr(i1)?;
+    let (i3, arms) = braced(many0(|i| {
+        let (ia, pattern) = parse_pattern(i)?;
+        let (ib, _) = fat_arrow_tag(ia)?;
+        let (ic, body) = alt((
+            parse_block_stmt,
+            map(parse_expr, |e| vec![Stmt::ExprValueStmt(e)]),
+        ))(ib)?;
+        let (id, _) = opt(comma_tag)(ic)?;
+        Ok((id, (pattern, body)))
+    }))(i2)?;
+    Ok((i3, Expr::MatchExpr {
+        value: Box::new(value),
+        arms,
+    }))
 }
 
 // STRUCT PARSING

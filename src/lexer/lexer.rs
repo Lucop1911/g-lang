@@ -216,6 +216,8 @@ fn parse_operator(state: &mut LexerState) -> Option<Spanned<Token>> {
         (Token::Or, 2)
     } else if remaining.starts_with(b"::") {
         (Token::DoubleColon, 2)
+    } else if remaining.starts_with(b"=>") {
+        (Token::FatArrow, 2)
     } else if remaining.starts_with(b"..") {
         (Token::Dot, 2)
     } else {
@@ -308,6 +310,7 @@ fn parse_ident_or_keyword(state: &mut LexerState) -> Option<Spanned<Token>> {
         "catch" => Token::Catch,
         "finally" => Token::Finally,
         "throw" => Token::Throw,
+        "match" => Token::Match,
         "async" => Token::Async,
         "await" => Token::Await,
         _ => Token::Ident(ident.to_string()),

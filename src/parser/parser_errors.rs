@@ -782,6 +782,8 @@ pub(crate) fn describe_token(token: &Token) -> String {
         Token::Throw => "'throw'".to_string(),
         Token::Async => "'async'".to_string(),
         Token::Await => "'await'".to_string(),
+        Token::Match => "'match'".to_string(),
+        Token::FatArrow => "'=>'".to_string(),
     }
 }
 

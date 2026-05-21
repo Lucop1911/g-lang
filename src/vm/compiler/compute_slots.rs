@@ -516,6 +516,12 @@ impl Scope {
                 self.process_expr(object, locals);
             }
             Expr::AwaitExpr(e) => self.process_expr(e, locals),
+            Expr::MatchExpr { value, arms } => {
+                self.process_expr(value, locals);
+                for (_, body) in arms {
+                    self.process_block_body(body, locals);
+                }
+            }
             Expr::LitExpr(_) | Expr::ThisExpr => {}
         }
     }

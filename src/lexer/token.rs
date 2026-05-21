@@ -84,6 +84,9 @@ pub enum Token {
     Catch,
     Finally,
     Throw,
+    // Match
+    Match,
+    FatArrow,
     // Async
     Async,
     Await,

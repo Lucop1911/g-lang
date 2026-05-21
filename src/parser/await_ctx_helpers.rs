@@ -153,6 +153,15 @@ fn verify_await_in_expr(expr: &Expr, in_async: bool) -> Result<(), ParserError> 
                 Err(ParserError::AwaitOutsideAsync { location: None })
             }
         }
+        Expr::MatchExpr { value, arms } => {
+            verify_await_in_expr(value, in_async)?;
+            for (_, body) in arms {
+                for s in body {
+                    verify_await_in_stmt(s, in_async)?;
+                }
+            }
+            Ok(())
+        }
         Expr::StructLiteral { .. }
         | Expr::ThisExpr
         | Expr::FieldAccessExpr { .. }

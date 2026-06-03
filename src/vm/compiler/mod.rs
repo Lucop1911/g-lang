@@ -122,14 +122,14 @@ impl Compiler {
         let mut local_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         for stmt in &program {
             match stmt {
-                crate::ast::ast::Stmt::LetStmt(ident, _) => {
+                Stmt::LetStmt(ident, _) => {
                     // Ensure the vector is large enough
                     while local_names.len() <= ident.slot.0 as usize {
                         local_names.push(String::new());
                     }
                     local_names[ident.slot.0 as usize] = ident.name.clone();
                 }
-                crate::ast::ast::Stmt::FnStmt { name, .. } => {
+                Stmt::FnStmt { name, .. } => {
                     // Also track function declarations so they can be captured by inner closures
                     while local_names.len() <= name.slot.0 as usize {
                         local_names.push(String::new());
@@ -248,6 +248,9 @@ impl Compiler {
             } => {
                 collections::compile_struct_stmt(self, name, fields, methods, line);
             }
+            Stmt::EnumStmt { name, variants } => {
+                collections::compile_enum_stmt(self, name, variants, line);
+            }
             Stmt::ImportStmt { path, items } => {
                 statements::compile_import_stmt(self, path, items, line);
             }
@@ -313,6 +316,9 @@ impl Compiler {
             }
             Expr::StructLiteral { name, fields } => {
                 collections::compile_struct_literal(self, name, fields, line);
+            }
+            Expr::EnumStructLiteral { enum_name, variant_name, fields } => {
+                collections::compile_enum_struct_literal(self, enum_name, variant_name, fields, line);
             }
             Expr::ThisExpr => {
                 expressions::compile_this_expr(self, line);

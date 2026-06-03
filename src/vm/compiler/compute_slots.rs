@@ -1,4 +1,4 @@
-use crate::ast::ast::{Expr, Program, SlotIndex, Stmt};
+use crate::ast::ast::{Expr, Pattern, Program, SlotIndex, Stmt, EnumPatternPayload};
 
 pub(crate) fn compute_slots(program: &mut Program) {
     let mut scope = Scope::new();
@@ -512,14 +512,37 @@ impl Scope {
                     self.process_expr(e, locals);
                 }
             }
+            Expr::EnumStructLiteral { fields, .. } => {
+                for (_, e) in fields {
+                    self.process_expr(e, locals);
+                }
+            }
             Expr::FieldAccessExpr { object, .. } => {
                 self.process_expr(object, locals);
             }
             Expr::AwaitExpr(e) => self.process_expr(e, locals),
             Expr::MatchExpr { value, arms } => {
                 self.process_expr(value, locals);
-                for (_, body) in arms {
-                    self.process_block_body(body, locals);
+                for (pattern, body) in arms {
+                    let mut arm_locals = locals.to_vec();
+                    if let Pattern::Enum { payload, .. } = pattern {
+                        match payload {
+                            EnumPatternPayload::Tuple(idents) => {
+                                for ident in idents.iter_mut() {
+                                    ident.slot = SlotIndex(arm_locals.len() as u16);
+                                    arm_locals.push((ident.name.clone(), ident.slot));
+                                }
+                            }
+                            EnumPatternPayload::Struct(fields) => {
+                                for (_, bind_ident) in fields.iter_mut() {
+                                    bind_ident.slot = SlotIndex(arm_locals.len() as u16);
+                                    arm_locals.push((bind_ident.name.clone(), bind_ident.slot));
+                                }
+                            }
+                            EnumPatternPayload::Unit => {}
+                        }
+                    }
+                    self.process_block_body(body, &arm_locals);
                 }
             }
             Expr::LitExpr(_) | Expr::ThisExpr => {}

@@ -505,3 +505,25 @@ fn test_for_in_loop() {
         panic!("Expected Stmt::ExprStmt(Expr::ForExpr), got {:?}", stmt);
     }
 }
+
+#[test]
+fn test_enum_statement_parsing() {
+    let input = "enum Color { Red, Green, Blue(u8), Alpha { r, g, b } }";
+    let program = parse_test_helper(input);
+    assert_eq!(program.len(), 1);
+    // Further inspection of AST if needed
+}
+
+#[test]
+fn test_match_expression_parsing() {
+    let input = "
+        match x {
+            1 => { println(\"one\"); },
+            2 => println(\"two\"),
+        }
+    ";
+    let spanned_tokens = Lexer::lex_tokens(input.as_bytes()).unwrap();
+    let spanned = SpannedTokens::new(&spanned_tokens);
+    let result = Parser::parse_tokens(spanned.to_tokens());
+    assert!(result.is_ok());
+}

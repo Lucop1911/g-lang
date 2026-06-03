@@ -16,6 +16,7 @@ use std::result::Result::*;
 
 use crate::ast::ast::{
     Expr, Ident, ImportItems, Infix, Literal, Pattern, Precedence, Prefix, Program, Stmt,
+    EnumVariant, EnumPatternPayload,
 };
 use crate::lexer::token::{Token, Tokens};
 use crate::parser::await_ctx_helpers::validate_await_usage;
@@ -102,6 +103,7 @@ tag_token!(eof_tag, Token::EOF);
 tag_token!(dot_tag, Token::Dot);
 tag_token!(double_colon_tag, Token::DoubleColon);
 tag_token!(struct_tag, Token::Struct);
+tag_token!(enum_tag, Token::Enum);
 tag_token!(this_tag, Token::This);
 tag_token!(import_tag, Token::Import);
 tag_token!(while_tag, Token::While);
@@ -169,6 +171,7 @@ fn parse_stmt(input: Tokens) -> IResult<Tokens, Stmt> {
         parse_fn_declaration,
         parse_return_stmt,
         parse_struct_stmt,
+        parse_enum_stmt,
         parse_while_stmt,
         parse_for_stmt,
         parse_break_stmt,
@@ -579,6 +582,21 @@ fn parse_pratt_expr(input: Tokens, precedence: Precedence) -> IResult<Tokens, Ex
                         arguments: args,
                     };
                     i = i3;
+                } else if peek_matches(i2, Token::LBrace) {
+                    let (i3, fields) = braced(comma_separated0(separated_pair(
+                        parse_ident,
+                        colon_tag,
+                        parse_expr,
+                    )))(i2)?;
+                    left = Expr::EnumStructLiteral {
+                        enum_name: match &left {
+                            Expr::IdentExpr(id) => id.clone(),
+                            _ => Ident::new("".to_string()),
+                        },
+                        variant_name: Ident::new(field_name),
+                        fields,
+                    };
+                    i = i3;
                 } else {
                     left = Expr::FieldAccessExpr {
                         object: Box::new(left),
@@ -718,13 +736,46 @@ fn parse_try_catch_expr(input: Tokens) -> IResult<Tokens, Expr> {
     ))
 }
 
-fn parse_pattern(input: Tokens) -> IResult<Tokens, Pattern> {
-    let (i1, t1) = take(1usize)(input)?;
-    if t1.token.is_empty() {
-        return Err(Err::Error(Error::new(input, ErrorKind::Tag)));
+fn parse_path(input: Tokens) -> IResult<Tokens, Vec<String>> {
+    let (i1, first) = parse_ident(input)?;
+    let mut path = vec![first.name];
+    let mut i = i1;
+    while peek_matches(i, Token::DoubleColon) {
+        let (i_next, _) = double_colon_tag(i)?;
+        let (i_next2, next_ident) = parse_ident(i_next)?;
+        path.push(next_ident.name);
+        i = i_next2;
     }
-    match &t1.token[0] {
-        Token::Ident(s) if s == "_" => Ok((i1, Pattern::Wildcard)),
+    Ok((i, path))
+}
+
+fn parse_enum_pattern_payload(input: Tokens) -> IResult<Tokens, EnumPatternPayload> {
+    if peek_matches(input, Token::LParen) {
+        let (i1, idents) = parens(comma_separated0(parse_ident))(input)?;
+        Ok((i1, EnumPatternPayload::Tuple(idents)))
+    } else if peek_matches(input, Token::LBrace) {
+        let (i1, fields) = braced(comma_separated0(alt((
+            separated_pair(parse_ident, colon_tag, parse_ident),
+            map(parse_ident, |field| (field.clone(), field)),
+        ))))(input)?;
+        Ok((i1, EnumPatternPayload::Struct(fields)))
+    } else {
+        Ok((input, EnumPatternPayload::Unit))
+    }
+}
+
+fn parse_pattern(input: Tokens) -> IResult<Tokens, Pattern> {
+    let next = peek_token(input);
+    match next {
+        Some(Token::Ident(s)) if s == "_" => {
+            let (i1, _) = take(1usize)(input)?;
+            Ok((i1, Pattern::Wildcard))
+        }
+        Some(Token::Ident(_)) => {
+            let (i1, path) = parse_path(input)?;
+            let (i2, payload) = parse_enum_pattern_payload(i1)?;
+            Ok((i2, Pattern::Enum { path, payload }))
+        }
         _ => {
             let (i2, lit) = parse_literal(input)?;
             Ok((i2, Pattern::Literal(lit)))
@@ -787,6 +838,33 @@ fn parse_struct_stmt(input: Tokens) -> IResult<Tokens, Stmt> {
                 methods,
             }
         },
+    )(input)
+}
+
+// ENUM PARSING
+
+fn parse_enum_variant(input: Tokens) -> IResult<Tokens, EnumVariant> {
+    let (i1, name) = parse_ident(input)?;
+    if peek_matches(i1, Token::LParen) {
+        let (i2, params) = parens(comma_separated0(parse_ident))(i1)?;
+        Ok((i2, EnumVariant::Tuple(name, params)))
+    } else if peek_matches(i1, Token::LBrace) {
+        let (i2, fields) = braced(comma_separated0(parse_ident))(i1)?;
+        Ok((i2, EnumVariant::Struct(name, fields)))
+    } else {
+        Ok((i1, EnumVariant::Unit(name)))
+    }
+}
+
+fn parse_enum_stmt(input: Tokens) -> IResult<Tokens, Stmt> {
+    map(
+        tuple((
+            enum_tag,
+            parse_ident,
+            braced(comma_separated0(parse_enum_variant)),
+            opt(semicolon_tag),
+        )),
+        |(_, name, variants, _)| Stmt::EnumStmt { name, variants },
     )(input)
 }
 

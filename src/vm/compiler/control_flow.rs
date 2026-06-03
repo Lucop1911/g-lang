@@ -1,7 +1,7 @@
 //! Control flow compilation: if/else, while, for-in, c-style for, break, continue.
 
 use crate::ast::ast::{Expr, Ident, Pattern, Program, Stmt};
-use crate::ast::ast::Literal;
+use crate::ast::ast::{Literal, EnumPatternPayload, SlotIndex};
 use crate::vm::compiler::{Compiler, JumpPatch, LoopContext};
 use crate::vm::instruction::Instruction;
 use crate::vm::obj::Object;
@@ -27,7 +27,7 @@ pub(crate) fn compile_if_expr(
     } else {
         let end_jump = compiler.emit_jump(line);
         compiler.patch_jump(else_jump);
-        compiler.emit_constant(crate::vm::obj::Object::Null, line);
+        compiler.emit_constant(Object::Null, line);
         compiler.patch_jump(end_jump);
     }
 }
@@ -64,7 +64,7 @@ pub(crate) fn compile_while_expr(compiler: &mut Compiler, cond: &Expr, body: &Pr
         .chunk
         .patch_u16(end_jump.addr, compiler.chunk.current_offset());
 
-    compiler.emit_constant(crate::vm::obj::Object::Null, line);
+    compiler.emit_constant(Object::Null, line);
 }
 
 /// Compiles a for-in loop expression.
@@ -75,11 +75,9 @@ pub(crate) fn compile_for_expr(
     body: &Program,
     line: u16,
 ) {
-    use crate::vm::obj::Object;
-
     // Allocate slots for the iterable and counter AFTER the ident slots.
     // The ident slots are assigned by compute_slots.
-    let base_slot = if !idents.is_empty() && idents[0].slot != crate::ast::ast::SlotIndex::UNSET {
+    let base_slot = if !idents.is_empty() && idents[0].slot != SlotIndex::UNSET {
         idents[0].slot.0 as u8
     } else {
         0
@@ -112,7 +110,7 @@ pub(crate) fn compile_for_expr(
 
     if idents.len() == 1 {
         let ident = &idents[0];
-        if ident.slot != crate::ast::ast::SlotIndex::UNSET {
+        if ident.slot != SlotIndex::UNSET {
             compiler.emit(Instruction::SetLocal(ident.slot.0 as u8), line);
         }
     } else {
@@ -120,7 +118,7 @@ pub(crate) fn compile_for_expr(
             compiler.emit(Instruction::Dup, line);
             compiler.emit_constant(Object::Integer(i as i64), line);
             compiler.emit(Instruction::Index, line);
-            if ident.slot != crate::ast::ast::SlotIndex::UNSET {
+            if ident.slot != SlotIndex::UNSET {
                 compiler.emit(Instruction::SetLocal(ident.slot.0 as u8), line);
             }
         }
@@ -165,8 +163,6 @@ pub(crate) fn compile_cstyle_for(
     body: &Program,
     line: u16,
 ) {
-    use crate::vm::obj::Object;
-
     if let Some(init_stmt) = init {
         compiler.compile_statement(init_stmt, line);
     }
@@ -222,9 +218,10 @@ pub(crate) fn compile_match_expr(
 ) {
     let mut end_jumps: Vec<JumpPatch> = Vec::new();
 
+    // 1. Evaluate the value to be matched.
     compiler.compile_expression(value, line);
 
-    for (i, (pattern, body)) in arms.iter().enumerate() {
+    for (pattern, body) in arms {
         match pattern {
             Pattern::Literal(lit) => {
                 compiler.emit(Instruction::Dup, line);
@@ -243,20 +240,70 @@ pub(crate) fn compile_match_expr(
                 compiler.emit(Instruction::Pop, line);
                 compile_program_body(compiler, body, false);
 
-                if i < arms.len() - 1 {
-                    end_jumps.push(compiler.emit_jump(line));
+                end_jumps.push(compiler.emit_jump(line));
+                compiler.patch_jump(next_arm);
+            }
+            Pattern::Enum { path, payload } => {
+                compiler.emit(Instruction::Dup, line);
+
+                let enum_name_idx = if path.len() > 1 {
+                    compiler.chunk.add_constant(Object::String(path[0].clone())).unwrap_or(u16::MAX)
+                } else {
+                    u16::MAX
+                };
+                let variant_name = if path.len() > 1 {
+                    path[1].clone()
+                } else {
+                    path[0].clone()
+                };
+                let variant_name_idx = compiler.chunk.add_constant(Object::String(variant_name)).unwrap_or(u16::MAX);
+
+                compiler.emit(Instruction::MatchEnum { enum_name_idx, variant_name_idx }, line);
+                let next_arm = compiler.emit_pop_jump_if_false(line);
+
+                match payload {
+                    EnumPatternPayload::Tuple(idents) => {
+                        for (idx, ident) in idents.iter().enumerate() {
+                            if ident.slot != SlotIndex::UNSET {
+                                compiler.emit(Instruction::Dup, line);
+                                compiler.emit(Instruction::DestructureEnumTuple(idx as u8), line);
+                                compiler.emit(Instruction::SetLocal(ident.slot.0 as u8), line);
+                            }
+                        }
+                    }
+                    EnumPatternPayload::Struct(fields) => {
+                        for (field_ident, bind_ident) in fields {
+                            if bind_ident.slot != SlotIndex::UNSET {
+                                compiler.emit(Instruction::Dup, line);
+                                let field_name_idx = compiler
+                                    .chunk
+                                    .add_constant(Object::String(field_ident.name.clone()))
+                                    .unwrap_or(u16::MAX);
+                                compiler.emit(Instruction::DestructureEnumStruct(field_name_idx), line);
+                                compiler.emit(Instruction::SetLocal(bind_ident.slot.0 as u8), line);
+                            }
+                        }
+                    }
+                    EnumPatternPayload::Unit => {}
                 }
+
+                compiler.emit(Instruction::Pop, line);
+                compile_program_body(compiler, body, false);
+
+                end_jumps.push(compiler.emit_jump(line));
                 compiler.patch_jump(next_arm);
             }
             Pattern::Wildcard => {
                 compiler.emit(Instruction::Pop, line);
                 compile_program_body(compiler, body, false);
-                if i < arms.len() - 1 {
-                    end_jumps.push(compiler.emit_jump(line));
-                }
+                end_jumps.push(compiler.emit_jump(line));
             }
         }
     }
+
+    // No match cleanup:
+    compiler.emit(Instruction::Pop, line);
+    compiler.emit_constant(Object::Null, line);
 
     for jump in end_jumps {
         compiler.patch_jump(jump);
@@ -295,8 +342,6 @@ pub(crate) fn compile_continue(compiler: &mut Compiler, line: u16) {
 /// Pops intermediate expression results. If `discard_last` is true, also pops the last result.
 /// If `discard_last` is false and the last statement was not an expression, pushes `Null`.
 fn compile_program_body(compiler: &mut Compiler, program: &Program, discard_last: bool) {
-    use crate::vm::obj::Object;
-
     if program.is_empty() {
         if !discard_last {
             compiler.emit_constant(Object::Null, 0);

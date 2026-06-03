@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::ast::ast::Ident;
+use crate::vm::chunk::Chunk;
 use crate::vm::runtime::runtime_errors::RuntimeError;
 use crate::vm::runtime::env::Environment;
 use crate::vm::runtime::module_registry::ModuleRegistry;
@@ -14,7 +15,7 @@ pub fn execute_call(
     stack: &mut Vec<Object>,
     frames: &mut Vec<CallFrame>,
     module_registry: &Arc<Mutex<ModuleRegistry>>,
-    globals: &Arc<Mutex<crate::vm::runtime::env::Environment>>,
+    globals: &Arc<Mutex<Environment>>,
     argc: usize,
 ) -> Result<ExecResult, RuntimeError> {
     if stack.len() < argc + 1 {
@@ -341,7 +342,7 @@ pub fn execute_return_value() -> ExecResult {
 
 pub fn call_async_function_vm(
     params: Vec<Ident>,
-    chunk: Arc<crate::vm::chunk::Chunk>,
+    chunk: Arc<Chunk>,
     local_names: Vec<String>,
     args: Vec<Object>,
     closure_env: Arc<Mutex<Environment>>,

@@ -53,6 +53,11 @@ pub enum Stmt {
         fields: Vec<(Ident, Expr)>,
         methods: Vec<(Ident, Expr)>,
     },
+    /// `enum Name { variants... }`
+    EnumStmt {
+        name: Ident,
+        variants: Vec<EnumVariant>,
+    },
     /// `import path::to::{items};`
     ImportStmt {
         path: Vec<String>,
@@ -99,6 +104,11 @@ pub enum Expr {
         name: Ident,
         fields: Vec<(Ident, Expr)>,
     },
+    EnumStructLiteral {
+        enum_name: Ident,
+        variant_name: Ident,
+        fields: Vec<(Ident, Expr)>,
+    },
     ThisExpr,
     FieldAccessExpr {
         object: Box<Expr>,
@@ -137,9 +147,39 @@ pub enum Expr {
 }
 
 #[derive(PartialEq, Debug, Clone, Hash)]
+/// A pattern used in a match arm.
 pub enum Pattern {
+    /// Wildcard pattern `_` that matches anything.
     Wildcard,
+    /// Literal pattern
     Literal(Literal),
+    /// Enum variant pattern
+    Enum {
+        path: Vec<String>,
+        payload: EnumPatternPayload,
+    },
+}
+
+/// The data associated with an enum variant in a match pattern.
+#[derive(PartialEq, Debug, Clone, Hash)]
+pub enum EnumPatternPayload {
+    /// Simple variant without data.
+    Unit,
+    /// Tuple-like variant with bindings
+    Tuple(Vec<Ident>),
+    /// Struct-like variant with bindings
+    Struct(Vec<(Ident, Ident)>),
+}
+
+/// A variant definition in an `enum` declaration.
+#[derive(PartialEq, Debug, Clone, Hash)]
+pub enum EnumVariant {
+    /// A simple variant
+    Unit(Ident),
+    /// A tuple-like variant
+    Tuple(Ident, Vec<Ident>),
+    /// A struct-like variant
+    Struct(Ident, Vec<Ident>),
 }
 
 /// Runtime literal values as they appear in source.

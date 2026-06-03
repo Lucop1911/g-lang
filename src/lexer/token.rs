@@ -55,6 +55,7 @@ pub enum Token {
     Let,
     Return,
     Struct,
+    Enum,
     This,
     Import,
     // punctuations

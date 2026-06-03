@@ -1,9 +1,10 @@
 //! Function compilation: declarations, calls, closures, async, await.
 
-use crate::ast::ast::{Expr, Ident, Program};
-use crate::vm::obj::Object;
+use crate::ast::ast::{Expr, Ident, Program, SlotIndex};
+use crate::vm::obj::{FunctionData, Object};
 use crate::vm::compiler::Compiler;
 use crate::vm::instruction::Instruction;
+use crate::vm::runtime::env::Environment;
 
 /// Compiles a function declaration: `fn name(params) { body }`.
 pub fn compile_fn_declaration(
@@ -21,7 +22,7 @@ pub fn compile_fn_declaration(
     // Stack: [Function, Function]
 
     // Store in primary location (local slot or global)
-    if name.slot != crate::ast::ast::SlotIndex::UNSET {
+    if name.slot != SlotIndex::UNSET {
         compiler.emit(Instruction::SetLocal(name.slot.0 as u8), line);
     } else {
         let name_idx = compiler
@@ -83,11 +84,11 @@ fn compile_closure_instruction(
     line: u16,
 ) {
     let (chunk, _param_count, local_names) = Compiler::compile_function_body(params, body, false);
-    let fn_obj = Object::Function(Box::new(crate::vm::obj::FunctionData {
+    let fn_obj = Object::Function(Box::new(FunctionData {
         params: params.to_vec(),
         chunk: std::sync::Arc::new(chunk),
         env: std::sync::Arc::new(std::sync::Mutex::new(
-            crate::vm::runtime::env::Environment::new(),
+            Environment::new(),
         )),
         local_names,
     }));
@@ -108,11 +109,11 @@ fn compile_closure_instruction(
 
 fn compile_async_closure(compiler: &mut Compiler, params: &[Ident], body: &Program, line: u16) {
     let (chunk, _param_count, local_names) = Compiler::compile_function_body(params, body, true);
-    let fn_obj = Object::AsyncFunction(Box::new(crate::vm::obj::FunctionData {
+    let fn_obj = Object::AsyncFunction(Box::new(FunctionData {
         params: params.to_vec(),
         chunk: std::sync::Arc::new(chunk),
         env: std::sync::Arc::new(std::sync::Mutex::new(
-            crate::vm::runtime::env::Environment::new(),
+            Environment::new(),
         )),
         local_names,
     }));

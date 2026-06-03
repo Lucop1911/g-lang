@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::vm::runtime::builtins::functions::BuiltinsFunctions;
 use crate::vm::runtime::env::Environment;
 use crate::vm::obj::Object;
 use crate::vm::runtime::runtime_errors::RuntimeError;
@@ -175,8 +176,6 @@ pub fn execute_set_global(
 }
 
 pub fn execute_get_builtin(stack: &mut Vec<Object>, globals: &Environment, idx: u8) {
-    use crate::vm::runtime::builtins::functions::BuiltinsFunctions;
-
     let name = if (idx as usize) < BuiltinsFunctions::BUILTIN_NAMES.len() {
         BuiltinsFunctions::BUILTIN_NAMES[idx as usize].to_string()
     } else {

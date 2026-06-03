@@ -1176,6 +1176,32 @@ impl VirtualMachine {
                 ops::structs::execute_build_struct(&mut self.stack, field_count);
                 Ok(ExecResult::Continue)
             }
+            Opcode::OpBuildEnumStruct => {
+                let field_count = read_u8(1);
+                ops::structs::execute_build_enum_struct(&mut self.stack, field_count);
+                Ok(ExecResult::Continue)
+            }
+            Opcode::OpBuildEnumTuple => {
+                let arg_count = read_u8(1);
+                ops::structs::execute_build_enum_tuple(&mut self.stack, arg_count);
+                Ok(ExecResult::Continue)
+            }
+            Opcode::OpMatchEnum => {
+                let enum_name_idx = read_u16(1);
+                let variant_name_idx = read_u16(3);
+                ops::structs::execute_match_enum(&mut self.stack, chunk, enum_name_idx, variant_name_idx);
+                Ok(ExecResult::Continue)
+            }
+            Opcode::OpDestructureEnumTuple => {
+                let field_idx = read_u8(1);
+                ops::structs::execute_destructure_enum_tuple(&mut self.stack, field_idx);
+                Ok(ExecResult::Continue)
+            }
+            Opcode::OpDestructureEnumStruct => {
+                let field_name_idx = read_u16(1);
+                ops::structs::execute_destructure_enum_struct(&mut self.stack, chunk, field_name_idx);
+                Ok(ExecResult::Continue)
+            }
             Opcode::OpGetField => {
                 ops::structs::execute_get_field(&mut self.stack);
                 Ok(ExecResult::Continue)

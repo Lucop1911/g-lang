@@ -10,7 +10,7 @@ use crate::ast::ast::Infix;
 use crate::lexer::token::{Token, Tokens};
 use crate::parser::parser::*;
 use nom::bytes::complete::take;
-use nom::combinator::map;
+use nom::combinator::{map, opt};
 use nom::error::Error;
 use nom::sequence::*;
 use nom::{branch::alt, multi::many0, IResult};
@@ -49,11 +49,12 @@ where
     move |input| {
         let (i1, first) = item_parser(input)?;
         let (i2, rest) = many0(preceded(comma_tag, &mut item_parser))(i1)?;
+        let (i3, _) = opt(comma_tag)(i2)?;
 
         let mut result = Vec::with_capacity(1 + rest.len());
         result.push(first);
         result.extend(rest);
-        Ok((i2, result))
+        Ok((i3, result))
     }
 }
 

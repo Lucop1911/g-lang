@@ -46,6 +46,7 @@ fn verify_await_in_stmt(stmt: &Stmt, in_async: bool) -> Result<(), ParserError> 
             }
             Ok(())
         }
+        Stmt::EnumStmt { .. } => Ok(()),
     }
 }
 
@@ -163,6 +164,7 @@ fn verify_await_in_expr(expr: &Expr, in_async: bool) -> Result<(), ParserError> 
             Ok(())
         }
         Expr::StructLiteral { .. }
+        | Expr::EnumStructLiteral { .. }
         | Expr::ThisExpr
         | Expr::FieldAccessExpr { .. }
         | Expr::CStyleForExpr { .. } => Ok(()),

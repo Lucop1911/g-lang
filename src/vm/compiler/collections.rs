@@ -1,8 +1,7 @@
 //! Collection compilation: arrays, hashes, indexing, struct literals, field access,
 //! method calls, and struct declarations.
-
-use crate::ast::ast::{Expr, Ident, Literal};
-use crate::vm::obj::{Object, StructObject};
+use crate::ast::ast::{Expr, Ident, Literal, EnumVariant};
+use crate::vm::obj::{EnumObject, EnumPayload, FunctionData, Object, StructObject};
 use crate::vm::compiler::Compiler;
 use crate::vm::instruction::Instruction;
 
@@ -141,7 +140,7 @@ pub fn compile_struct_stmt(
             let (fn_chunk, _param_count, local_names) =
                 crate::vm::compiler::Compiler::compile_function_body(&new_params, body, false);
 
-            let fn_obj = Object::Function(Box::new(crate::vm::obj::FunctionData {
+            let fn_obj = Object::Function(Box::new(FunctionData {
                 params: new_params,
                 chunk: std::sync::Arc::new(fn_chunk),
                 env: std::sync::Arc::new(std::sync::Mutex::new(
@@ -151,6 +150,147 @@ pub fn compile_struct_stmt(
             }));
 
             method_map.insert(ident.name.clone(), fn_obj);
+        }
+    }
+
+    let struct_obj = Object::Struct(Box::new(StructObject {
+        name: name.name.clone(),
+        fields: field_map,
+        methods: method_map,
+    }));
+
+    let struct_idx = compiler.chunk.add_constant(struct_obj.clone());
+    if let Some(struct_idx) = struct_idx {
+        compiler.emit(Instruction::Constant(struct_idx), line);
+    }
+
+    compiler.struct_templates.insert(name.name.clone(), struct_obj);
+
+    let name_idx = compiler
+        .chunk
+        .add_constant(Object::String(name.name.clone()));
+    if let Some(name_idx) = name_idx {
+        compiler.emit(Instruction::SetGlobal(name_idx), line);
+    }
+}
+
+/// Compiles an enum struct variant literal.
+pub fn compile_enum_struct_literal(
+    compiler: &mut Compiler,
+    enum_name: &Ident,
+    variant_name: &Ident,
+    fields: &[(Ident, Expr)],
+    line: u16,
+) {
+    for (ident, expr) in fields {
+        let field_name_idx = compiler
+            .chunk
+            .add_constant(Object::String(ident.name.clone()));
+        if let Some(idx) = field_name_idx {
+            compiler.emit(Instruction::Constant(idx), line);
+        }
+        compiler.compile_expression(expr, line);
+    }
+
+    let enum_name_idx = compiler
+        .chunk
+        .add_constant(Object::String(enum_name.name.clone()));
+    if let Some(idx) = enum_name_idx {
+        compiler.emit(Instruction::Constant(idx), line);
+    }
+
+    let variant_name_idx = compiler
+        .chunk
+        .add_constant(Object::String(variant_name.name.clone()));
+    if let Some(idx) = variant_name_idx {
+        compiler.emit(Instruction::Constant(idx), line);
+    }
+
+    compiler.emit(Instruction::BuildEnumStruct(fields.len() as u8), line);
+}
+
+/// Compiles an enum statement
+pub fn compile_enum_stmt(
+    compiler: &mut Compiler,
+    name: &Ident,
+    variants: &[EnumVariant],
+    line: u16,
+) {
+    use ahash::AHasher;
+    use std::hash::BuildHasherDefault;
+    type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AHasher>>;
+
+    let mut field_map: HashMap<String, Object> = HashMap::default();
+    let mut method_map: HashMap<String, Object> = HashMap::default();
+
+    for variant in variants {
+        match variant {
+            EnumVariant::Unit(v_name) => {
+                let enum_obj = Object::Enum(Box::new(EnumObject {
+                    enum_name: name.name.clone(),
+                    variant_name: v_name.name.clone(),
+                    payload: EnumPayload::Unit,
+                }));
+                field_map.insert(v_name.name.clone(), enum_obj);
+            }
+            EnumVariant::Tuple(v_name, params) => {
+                let mut new_params = vec![Ident::new("this".to_string())];
+                new_params.extend(params.clone());
+                for (i, p) in new_params.iter_mut().enumerate() {
+                    p.slot = crate::ast::ast::SlotIndex(i as u16);
+                }
+
+                let mut chunk = crate::vm::chunk::Chunk::new();
+                for i in 1..=params.len() {
+                    chunk.write_instruction(Instruction::GetLocal(i as u8), 0);
+                }
+                let enum_name_idx = chunk.add_constant(Object::String(name.name.clone())).unwrap();
+                chunk.write_instruction(Instruction::Constant(enum_name_idx), 0);
+                let variant_name_idx = chunk.add_constant(Object::String(v_name.name.clone())).unwrap();
+                chunk.write_instruction(Instruction::Constant(variant_name_idx), 0);
+                chunk.write_instruction(Instruction::BuildEnumTuple(params.len() as u8), 0);
+                chunk.write_instruction(Instruction::ReturnValue, 0);
+
+                let fn_obj = Object::Function(Box::new(FunctionData {
+                    local_names: new_params.iter().map(|p| p.name.clone()).collect(),
+                    params: new_params,
+                    chunk: std::sync::Arc::new(chunk),
+                    env: std::sync::Arc::new(std::sync::Mutex::new(
+                        crate::vm::runtime::env::Environment::new(),
+                    )),
+                }));
+                method_map.insert(v_name.name.clone(), fn_obj);
+            }
+            EnumVariant::Struct(v_name, fields) => {
+                let mut new_params = vec![Ident::new("this".to_string())];
+                new_params.extend(fields.clone());
+                for (i, p) in new_params.iter_mut().enumerate() {
+                    p.slot = crate::ast::ast::SlotIndex(i as u16);
+                }
+
+                let mut chunk = crate::vm::chunk::Chunk::new();
+                for (i, f) in fields.iter().enumerate() {
+                    let field_name_idx = chunk.add_constant(Object::String(f.name.clone())).unwrap();
+                    chunk.write_instruction(Instruction::Constant(field_name_idx), 0);
+                    chunk.write_instruction(Instruction::GetLocal((i + 1) as u8), 0);
+                }
+                let enum_name_idx = chunk.add_constant(Object::String(name.name.clone())).unwrap();
+                chunk.write_instruction(Instruction::Constant(enum_name_idx), 0);
+                let variant_name_idx = chunk.add_constant(Object::String(v_name.name.clone())).unwrap();
+                chunk.write_instruction(Instruction::Constant(variant_name_idx), 0);
+                chunk.write_instruction(Instruction::BuildEnumStruct(fields.len() as u8), 0);
+                chunk.write_instruction(Instruction::ReturnValue, 0);
+
+                let fn_obj = Object::Function(Box::new(FunctionData {
+                    local_names: new_params.iter().map(|p| p.name.clone()).collect(),
+                    params: new_params,
+                    chunk: std::sync::Arc::new(chunk),
+                    env: std::sync::Arc::new(std::sync::Mutex::new(
+                        crate::vm::runtime::env::Environment::new(),
+                    )),
+                }));
+                method_map.insert(v_name.name.clone(), fn_obj);
+            }
         }
     }
 

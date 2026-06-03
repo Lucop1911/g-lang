@@ -102,6 +102,16 @@ pub(crate) enum Opcode {
     OpSetField = 0x62,
     /// Call struct method. Operand: u8 arg count.
     OpCallMethod = 0x63,
+    /// Build enum struct variant. Operand: u8 field count.
+    OpBuildEnumStruct = 0x64,
+    /// Build enum tuple variant. Operand: u8 arg count.
+    OpBuildEnumTuple = 0x65,
+    /// Check if stack top matches enum variant. Operands: u16 enum_name_idx, u16 variant_name_idx.
+    OpMatchEnum = 0x66,
+    /// Destructure enum tuple field. Operand: u8 field index.
+    OpDestructureEnumTuple = 0x67,
+    /// Destructure enum struct field. Operand: u16 field_name_idx.
+    OpDestructureEnumStruct = 0x68,
 
     // ─── Exception handling (0x70–0x7F) ────────────────────────────
     /// Throw value on top of stack.
@@ -174,6 +184,11 @@ impl Opcode {
             0x61 => Some(Opcode::OpGetField),
             0x62 => Some(Opcode::OpSetField),
             0x63 => Some(Opcode::OpCallMethod),
+            0x64 => Some(Opcode::OpBuildEnumStruct),
+            0x65 => Some(Opcode::OpBuildEnumTuple),
+            0x66 => Some(Opcode::OpMatchEnum),
+            0x67 => Some(Opcode::OpDestructureEnumTuple),
+            0x68 => Some(Opcode::OpDestructureEnumStruct),
             0x70 => Some(Opcode::OpThrow),
             0x71 => Some(Opcode::OpPushCatch),
             0x72 => Some(Opcode::OpPopCatch),
@@ -220,6 +235,11 @@ impl Opcode {
             Opcode::OpBuildArray | Opcode::OpBuildHash => 2,
             Opcode::OpIndex | Opcode::OpSetIndex => 0,
             Opcode::OpBuildStruct => 1,
+            Opcode::OpBuildEnumStruct => 1,
+            Opcode::OpBuildEnumTuple => 1,
+            Opcode::OpMatchEnum => 4,
+            Opcode::OpDestructureEnumTuple => 1,
+            Opcode::OpDestructureEnumStruct => 2,
             Opcode::OpGetField | Opcode::OpSetField => 0,
             Opcode::OpCallMethod => 1,
             Opcode::OpThrow => 0,
@@ -278,6 +298,11 @@ pub enum Instruction {
     Index,
     SetIndex,
     BuildStruct(u8),
+    BuildEnumStruct(u8),
+    BuildEnumTuple(u8),
+    MatchEnum { enum_name_idx: u16, variant_name_idx: u16 },
+    DestructureEnumTuple(u8),
+    DestructureEnumStruct(u16),
     GetField,
     SetField,
     CallMethod(u8),
@@ -393,6 +418,27 @@ pub(crate) fn encode_instruction(code: &mut Vec<u8>, instr: Instruction) {
         Instruction::BuildStruct(count) => {
             code.push(Opcode::OpBuildStruct as u8);
             code.push(count);
+        }
+        Instruction::BuildEnumStruct(count) => {
+            code.push(Opcode::OpBuildEnumStruct as u8);
+            code.push(count);
+        }
+        Instruction::BuildEnumTuple(count) => {
+            code.push(Opcode::OpBuildEnumTuple as u8);
+            code.push(count);
+        }
+        Instruction::MatchEnum { enum_name_idx, variant_name_idx } => {
+            code.push(Opcode::OpMatchEnum as u8);
+            code.extend_from_slice(&enum_name_idx.to_be_bytes());
+            code.extend_from_slice(&variant_name_idx.to_be_bytes());
+        }
+        Instruction::DestructureEnumTuple(idx) => {
+            code.push(Opcode::OpDestructureEnumTuple as u8);
+            code.push(idx);
+        }
+        Instruction::DestructureEnumStruct(idx) => {
+            code.push(Opcode::OpDestructureEnumStruct as u8);
+            code.extend_from_slice(&idx.to_be_bytes());
         }
         Instruction::GetField => code.push(Opcode::OpGetField as u8),
         Instruction::SetField => code.push(Opcode::OpSetField as u8),

@@ -1518,3 +1518,106 @@ async fn vm_test_struct_instance_method_call() {
     let evaluated = vm_test_helper(input).await;
     assert_eq!(evaluated, Object::String("Hello, World".to_string()));
 }
+
+// ─── Enums and Match ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_enum_basic() {
+    let input = "
+        enum Color { Red, Green, Blue }
+        Color::Red
+    ";
+    let result = vm_test_helper(input).await;
+    assert_eq!(format!("{}", result), "Color::Red");
+}
+
+#[tokio::test]
+async fn test_enum_payloads() {
+    let input = "
+        enum Message {
+            Quit,
+            Move { x, y },
+            Write(s),
+        }
+        let m1 = Message::Quit;
+        let m2 = Message::Move { x: 10, y: 20 };
+        let m3 = Message::Write(\"hello\");
+        [m1, m2, m3]
+    ";
+    let result = vm_test_helper(input).await;
+    assert_eq!(format!("{}", result), "[Message::Quit, Message::Move { x: 10, y: 20 }, Message::Write(hello)]");
+}
+
+#[tokio::test]
+async fn test_match_basic() {
+    let input = "
+        enum Color { Red, Green, Blue }
+        let c = Color::Green;
+        match c {
+            Color::Red => 1,
+            Color::Green => 2,
+            Color::Blue => 3,
+        }
+    ";
+    let result = vm_test_helper(input).await;
+    assert_eq!(result, Object::Integer(2));
+}
+
+#[tokio::test]
+async fn test_match_destructuring() {
+    let input = "
+        enum Value {
+            Simple,
+            Tuple(a, b),
+            Struct { x, y }
+        }
+        
+        fn process(v) {
+            match v {
+                Value::Simple => \"simple\",
+                Value::Tuple(a, b) => a + b,
+                Value::Struct { x, y } => x * y,
+            }
+        }
+        
+        [process(Value::Simple), process(Value::Tuple(10, 20)), process(Value::Struct { x: 5, y: 6 })]
+    ";
+    let result = vm_test_helper(input).await;
+    assert_eq!(format!("{}", result), "[simple, 30, 30]");
+}
+
+#[tokio::test]
+async fn test_match_no_prefix() {
+    let input = "
+        enum E { A, B }
+        let v = E::B;
+        match v {
+            A => 1,
+            B => 2,
+        }
+    ";
+    let result = vm_test_helper(input).await;
+    assert_eq!(result, Object::Integer(2));
+}
+
+#[tokio::test]
+async fn test_match_wildcard() {
+    let input = "
+        match 10 {
+            1 => \"one\",
+            2 => \"two\",
+            _ => \"other\",
+        }
+    ";
+    let result = vm_test_helper(input).await;
+    assert_eq!(format!("{}", result), "other");
+}
+
+#[tokio::test]
+async fn test_match_comma_requirement() {
+    // This should fail to parse if comma is missing
+    let spanned_tokens = Lexer::lex_tokens("match 1 { 1 => \"one\" }".as_bytes()).unwrap();
+    let spanned = SpannedTokens::new(&spanned_tokens);
+    let result = Parser::parse_tokens(spanned.to_tokens());
+    assert!(result.is_err(), "Match arm without comma should fail to parse");
+}

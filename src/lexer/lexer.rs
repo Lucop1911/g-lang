@@ -296,6 +296,7 @@ fn parse_ident_or_keyword(state: &mut LexerState) -> Option<Spanned<Token>> {
         "else" => Token::Else,
         "return" => Token::Return,
         "struct" => Token::Struct,
+        "enum" => Token::Enum,
         "this" => Token::This,
         "import" => Token::Import,
         "true" => Token::BoolLiteral(true),

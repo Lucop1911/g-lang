@@ -1,6 +1,6 @@
 //! Exception handling compilation: try/catch/finally, throw.
 
-use crate::ast::ast::{Expr, Ident, Program, SlotIndex};
+use crate::ast::ast::{Expr, Ident, Program, SlotIndex, Stmt};
 use crate::vm::obj::Object;
 use crate::vm::compiler::Compiler;
 use crate::vm::instruction::Instruction;
@@ -126,7 +126,7 @@ fn compile_block_body(compiler: &mut Compiler, body: &Program, line: u16) {
 
         // Pop intermediate expression results
         if i < body.len() - 1
-            && let crate::ast::ast::Stmt::ExprStmt(_) = stmt {
+            && let Stmt::ExprStmt(_) = stmt {
                 compiler.emit(Instruction::Pop, line);
         }
     }

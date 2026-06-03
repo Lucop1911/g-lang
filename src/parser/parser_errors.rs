@@ -755,6 +755,7 @@ pub(crate) fn describe_token(token: &Token) -> String {
         Token::Let => "'let'".to_string(),
         Token::Return => "'return'".to_string(),
         Token::Struct => "'struct'".to_string(),
+        Token::Enum => "'enum'".to_string(),
         Token::This => "'this'".to_string(),
         Token::Import => "'import'".to_string(),
         Token::Comma => "','".to_string(),

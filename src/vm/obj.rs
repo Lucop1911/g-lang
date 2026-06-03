@@ -29,6 +29,28 @@ pub struct StructObject {
     pub methods: HashMap<String, Object>,
 }
 
+/// Represents an instance of an enum variant.
+///
+/// Contains the name of the enum, the name of the variant, and any
+/// associated data (payload).
+#[derive(Clone, PartialEq)]
+pub struct EnumObject {
+    pub enum_name: String,
+    pub variant_name: String,
+    pub payload: EnumPayload,
+}
+
+/// The data associated with an enum variant instance.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EnumPayload {
+    /// A simple variant without any data
+    Unit,
+    /// A tuple-like variant
+    Tuple(Vec<Object>),
+    /// A struct-like variant
+    Struct(HashMap<String, Object>),
+}
+
 /// Loaded module with its exported bindings.
 #[derive(Clone)]
 pub struct ModuleObject {
@@ -120,6 +142,8 @@ pub enum Object {
     WasmImportedFunction(Box<WasmFunctionData>),
     /// Struct instance with fields and methods.
     Struct(Box<StructObject>),
+    /// Enum variant instance.
+    Enum(Box<EnumObject>),
     /// Loaded module with exported bindings.
     Module(Box<ModuleObject>),
     Null,
@@ -182,6 +206,11 @@ impl fmt::Debug for Object {
                 f,
                 "Struct(name:{}, fields:{:?}, methods:{:?})",
                 s.name, s.fields, s.methods
+            ),
+            Object::Enum(e) => write!(
+                f,
+                "Enum(enum:{}, variant:{}, payload:{:?})",
+                e.enum_name, e.variant_name, e.payload
             ),
             Object::Module(m) => write!(
                 f,
@@ -249,6 +278,7 @@ impl PartialEq for Object {
             (Object::Struct(a), Object::Struct(b)) => {
                 a.name == b.name && a.fields == b.fields && a.methods == b.methods
             }
+            (Object::Enum(a), Object::Enum(b)) => a == b,
             #[cfg(feature = "wasm")]
             (Object::WasmModule(a), Object::WasmModule(b)) => {
                 a.name == b.name && a.exports.keys().collect::<Vec<_>>() == b.exports.keys().collect::<Vec<_>>()
@@ -279,6 +309,7 @@ impl Object {
             Object::Error(_) => "error".to_string(),
             Object::Method(_) => "method".to_string(),
             Object::Struct(s) => format!("struct {}", s.name),
+            Object::Enum(e) => format!("enum {}", e.enum_name),
             Object::Module(m) => format!("module {}", m.name),
             Object::Break => "break".to_string(),
             Object::Continue => "continue".to_string(),
@@ -341,14 +372,43 @@ impl fmt::Display for Object {
             Object::Error(ref e) => write!(f, "{}", e),
             Object::Method(_) => write!(f, "[method]"),
             Object::Struct(ref s) => {
-                write!(f, "{}{{ ", s.name)?;
-                for (i, (field_name, field_value)) in s.fields.iter().enumerate() {
+                write!(f, "{} {{ ", s.name)?;
+                let mut sorted_fields: Vec<_> = s.fields.iter().collect();
+                sorted_fields.sort_by_key(|&(name, _)| name);
+                for (i, (field_name, field_value)) in sorted_fields.iter().enumerate() {
                     write!(f, "{}: {}", field_name, field_value)?;
                     if i < s.fields.len() - 1 {
                         write!(f, ", ")?;
                     }
                 }
                 write!(f, " }}")
+            }
+            Object::Enum(ref e) => {
+                match &e.payload {
+                    EnumPayload::Unit => write!(f, "{}::{}", e.enum_name, e.variant_name),
+                    EnumPayload::Tuple(args) => {
+                        write!(f, "{}::{}(", e.enum_name, e.variant_name)?;
+                        for (i, arg) in args.iter().enumerate() {
+                            write!(f, "{}", arg)?;
+                            if i < args.len() - 1 {
+                                write!(f, ", ")?;
+                            }
+                        }
+                        write!(f, ")")
+                    }
+                    EnumPayload::Struct(fields) => {
+                        write!(f, "{}::{} {{ ", e.enum_name, e.variant_name)?;
+                        let mut sorted_fields: Vec<_> = fields.iter().collect();
+                        sorted_fields.sort_by_key(|&(name, _)| name);
+                        for (i, (field_name, field_value)) in sorted_fields.iter().enumerate() {
+                            write!(f, "{}: {}", field_name, field_value)?;
+                            if i < fields.len() - 1 {
+                                write!(f, ", ")?;
+                            }
+                        }
+                        write!(f, " }}")
+                    }
+                }
             }
             Object::Break => write!(f, "break"),
             Object::Continue => write!(f, "continue"),
